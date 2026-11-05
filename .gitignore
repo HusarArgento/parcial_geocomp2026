@@ -4,3 +4,5 @@
 .Ruserdata
 # Extractos originales de OpenStreetMap
 data/raw/*.pbf
+data/raw/*.gpkg
+data/processed/*.gpkg
