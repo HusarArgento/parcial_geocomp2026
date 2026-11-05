@@ -105,3 +105,10 @@ dir.create("data/processed", recursive = TRUE, showWarnings = FALSE)
 st_write(PERGAMINO,   "data/processed/pergamino_area.gpkg",    delete_dsn = TRUE)
 st_write(calles_osm,  "data/processed/calles_osm_raw.gpkg",    delete_dsn = TRUE)
 st_write(calles_line, "data/processed/calles_line.gpkg",       delete_dsn = TRUE)
+
+dir.create("data/raw", recursive = TRUE, showWarnings = FALSE)
+dir.create("data/processed", recursive = TRUE, showWarnings = FALSE)
+
+saveRDS(calles_osm, "data/raw/calles_osm.rds")
+saveRDS(calles_per, "data/processed/calles_per.rds")
+saveRDS(calles_line, "data/processed/calles_line.rds")

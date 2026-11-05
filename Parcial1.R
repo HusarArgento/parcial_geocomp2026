@@ -34,3 +34,4 @@ q <- opq(bbox = st_bbox(st_transform(PERGAMINO, 4326)),
 #Descarga datos
 calles_osm <- osmdata_sf(q)
 
+file.info(list.files("data/raw", pattern = "\\.pbf$", full.names = TRUE))[, c("size", "mtime")]
