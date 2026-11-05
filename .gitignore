@@ -2,3 +2,5 @@
 .Rhistory
 .RData
 .Ruserdata
+# Extractos originales de OpenStreetMap
+data/raw/*.pbf
