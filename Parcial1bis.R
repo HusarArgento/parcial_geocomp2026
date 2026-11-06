@@ -9,6 +9,7 @@ library(tidygraph)
 library(sfnetworks)
 library(osmdata)
 library(units)
+library(mapview)
 options(scipen = 999)
 
 #Consigna A: Obtención de la red desde OSM--------------------------------------
@@ -54,6 +55,8 @@ file.info(list.files("data/raw", pattern = "\\.pbf$", full.names = TRUE))[, c("s
 
 st_area(PERGAMINO) |> set_units("km2")
 leaflet() |> addTiles() |> addPolygons(data = st_transform(PERGAMINO, 4326))
+
+
 #Descarga de la red vial
 #- Fuente: OpenStreetMap, mediante extracto de Geofabrik.
 #- Herramienta: osmextract, función oe_get().
@@ -75,40 +78,23 @@ st_crs(calles_per)
 #Limpiar geometrías vacías, duplicadas o con errores; convertir MULTILINESTRING  a LINESTRING
 ##Verificar
 
-summary(calles_per)
-
-# Geometrías vacías
-sum(st_is_empty(calles_per))
-
-# Geometrías inválidas
-sum(!st_is_valid(calles_per))
-
-# Tipos geométricos
-table(st_geometry_type(calles_per))
-
-# Cantidad de geometrías
-nrow(calles_per)
-
-## Casteamos de Multi a Line 
-
-st_geometry_type(calles_per) |> table()
-
-# Conversión
-calles_line <- st_cast(calles_per, "LINESTRING")
-
-# Después
-st_geometry_type(calles_line) |> table()
+summary(calles_per) #Estadisticas del callejero
+sum(st_is_empty(calles_per)) # Corroborar geometrías vacías
+sum(!st_is_valid(calles_per)) # Corroborar geometrías inválidas
+table(st_geometry_type(calles_per)) # Corroborar tipologias geométricas
+nrow(calles_per) # Verificar cantidad  de geometrías
+table(calles_per$highway, useNA = "ifany")# distribucion x tipos de vía
 
 
-#guardamos
-dir.create("data/processed", recursive = TRUE, showWarnings = FALSE)
-st_write(PERGAMINO,   "data/processed/pergamino_area.gpkg",    delete_dsn = TRUE)
-st_write(calles_osm,  "data/processed/calles_osm_raw.gpkg",    delete_dsn = TRUE)
-st_write(calles_line, "data/processed/calles_line.gpkg",       delete_dsn = TRUE)
 
-dir.create("data/raw", recursive = TRUE, showWarnings = FALSE)
-dir.create("data/processed", recursive = TRUE, showWarnings = FALSE)
+st_geometry_type(calles_per) |> table() 
+calles_line <- st_cast(calles_per, "LINESTRING") ## Casteamos de Multistring a Line cuan Gandalf en Moria 
+st_geometry_type(calles_line) |> table() # Después
 
-saveRDS(calles_osm, "data/raw/calles_osm.rds")
-saveRDS(calles_per, "data/processed/calles_per.rds")
-saveRDS(calles_line, "data/processed/calles_line.rds")
+mapview(calles_line)
+mapview(calles_osm)
+
+calles_linered <- st_snap_to_grid(calles_line, size = 1)
+
+
+
