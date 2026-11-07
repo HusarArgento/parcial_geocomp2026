@@ -10,7 +10,6 @@ library(sfnetworks)
 library(osmdata)
 library(units)
 library(mapview)
-library(st_snap)
 options(scipen = 999)
 
 #Consigna A: Obtención de la red desde OSM--------------------------------------
@@ -85,6 +84,7 @@ sum(!st_is_valid(calles_per)) # Corroborar geometrías inválidas
 table(st_geometry_type(calles_per)) # Corroborar tipologias geométricas
 nrow(calles_per) # Verificar cantidad  de geometrías
 table(calles_per$highway, useNA = "ifany")# distribucion x tipos de vía
+table(calles_per$maxspeed)
 
 #El hechicero castea
 st_geometry_type(calles_per) |> table() 
@@ -111,5 +111,20 @@ calles_linered <- calles_linered |>
 ### Duplicamos calles con doblevía
 calle_aux <- calles_linered |> filter(oneway == "no") |> st_reverse()
 calles_linered <- rbind(calles_linered, calle_aux)
+##PROBLEMA!
+Velocidades
+
+#Graficamos para explorar. 
+ggplot(calles_linered) +
+  # Evaluamos is.na() directamente dentro de aes()
+  geom_sf(aes(color = is.na(maxspeed)), linewidth = 0.5) +
+  # Personalizamos los colores y las etiquetas de la leyenda al vuelo
+  scale_color_manual(
+    values = c("TRUE" = "gray80", "FALSE" = "firebrick"),
+    labels = c("TRUE" = "Sin velocidad (NA)", "FALSE" = "Con velocidad")
+  ) +
+  theme_minimal() +
+  labs(color = "Estado")
+
 
 # Armado red urbana -------------------------------------------

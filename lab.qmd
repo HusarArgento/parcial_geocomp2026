@@ -180,3 +180,127 @@ max(abs(
     st_coordinates(calles_linered)[, 1:2]
 ))
 ```
+
+```{r}
+table(calles_per$highway, calles_per$maxspeed, useNA = "ifany")
+```
+
+```{r}
+library(dplyr)
+library(sf)
+
+calles_per %>%
+  st_drop_geometry() %>%
+  count(highway, maxspeed, sort = TRUE)
+```
+
+```{r}
+# install.packages("janitor")
+library(janitor)
+
+calles_per %>%
+  st_drop_geometry() %>%
+  tabyl(highway, maxspeed) %>%
+  adorn_totals(c("row", "col")) # Agrega totales al margen
+```
+
+```{r}
+
+factpal <- colorFactor(topo.colors(length(unique(calles_linered$highway))),
+                       calles_linered$highway)
+calles_linered |>
+  st_transform(5347) |>
+  filter(is.na(oneway)) |>
+  leaflet() |>
+  addTiles() |>
+  addPolylines(color = ~factpal(highway),
+               popup = ~ paste0("Tipo: ", highway, "<br>Mano única: ", oneway ) ) |>
+  addLegend(pal = factpal, values = ~highway, title = "Tipo de camino")
+
+rm(factpal)
+```
+
+```{r}
+library(ggplot2)
+
+ggplot(calles_linered) +
+  # Evaluamos is.na() directamente dentro de aes()
+  geom_sf(aes(color = is.na(maxspeed)), linewidth = 0.5) +
+  # Personalizamos los colores y las etiquetas de la leyenda al vuelo
+  scale_color_manual(
+    values = c("TRUE" = "gray80", "FALSE" = "firebrick"),
+    labels = c("TRUE" = "Sin velocidad (NA)", "FALSE" = "Con velocidad")
+  ) +
+  theme_minimal() +
+  labs(color = "Estado")
+```
+
+```{r}
+
+```
+
+```{r}
+
+
+ggplot(calles_per) +
+  # Mapeamos el color directamente a la columna highway
+  geom_sf(aes(color = highway), linewidth = 0.5) +
+  
+  # Usamos una paleta de colores cualitativa linda (como viridis plasma o colorbrewer)
+  scale_color_brewer(palette = "Set1") +
+  
+  # Estilo de mapa limpio sin ejes molestos
+  theme_minimal() +
+  
+  # Etiquetas y títulos
+  labs(
+    title = "Red vial de Pergamino por tipo de vía",
+    subtitle = "Clasificación según OpenStreetMap (highway)",
+    color = "Tipo de vía"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold", size = 12),
+    legend.position = "right"
+  )
+
+# Guardar como imagen PNG en alta resolución (300 DPI)
+ggsave(
+  filename = "mapa_pergamino_velocidades2.png", 
+  width = 8,       # Ancho en pulgadas
+  height = 6,      # Alto en pulgadas
+  dpi = 300        # Resolución (300 dpi es estándar de calidad para impresión/papers)
+)
+```
+
+```{r}
+ggplot(calles_per) +
+  # Mapeamos el color directamente a la columna highway
+  geom_sf(aes(color = highway), linewidth = 0.5) +
+  
+  # Usamos una paleta de colores cualitativa linda (como viridis plasma o colorbrewer)
+  scale_color_brewer(palette = "Paired") +
+  
+  # Estilo de mapa limpio sin ejes molestos
+  theme_minimal() +
+  
+  # Etiquetas y títulos
+  labs(
+    title = "Red vial de Pergamino por tipo de vía",
+    subtitle = "Clasificación según OpenStreetMap (highway)",
+    color = "Tipo de vía"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold", size = 12),
+    legend.position = "right"
+  )
+
+
+
+# 2. Guardar el mapa directamente en la carpeta data/maps
+ggsave(
+  filename = "data/maps/mapa_pergamino_vias2.png", 
+  width = 8, 
+  height = 6, 
+  dpi = 300
+)
+```
