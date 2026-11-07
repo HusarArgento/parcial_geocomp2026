@@ -10,6 +10,7 @@ library(sfnetworks)
 library(osmdata)
 library(units)
 library(mapview)
+library(st_snap)
 options(scipen = 999)
 
 #Consigna A: Obtención de la red desde OSM--------------------------------------
@@ -76,8 +77,8 @@ calles_per <- st_transform(calles_osm, 5347)
 st_crs(calles_per)
 
 #Limpiar geometrías vacías, duplicadas o con errores; convertir MULTILINESTRING  a LINESTRING
-##Verificar
 
+##Verificar
 summary(calles_per) #Estadisticas del callejero
 sum(st_is_empty(calles_per)) # Corroborar geometrías vacías
 sum(!st_is_valid(calles_per)) # Corroborar geometrías inválidas
@@ -85,16 +86,30 @@ table(st_geometry_type(calles_per)) # Corroborar tipologias geométricas
 nrow(calles_per) # Verificar cantidad  de geometrías
 table(calles_per$highway, useNA = "ifany")# distribucion x tipos de vía
 
-
-
+#El hechicero castea
 st_geometry_type(calles_per) |> table() 
 calles_line <- st_cast(calles_per, "LINESTRING") ## Casteamos de Multistring a Line cuan Gandalf en Moria 
 st_geometry_type(calles_line) |> table() # Después
 
 mapview(calles_line)
-mapview(calles_osm)
 
-calles_linered <- st_snap_to_grid(calles_line, size = 1)
+#Redondeo, por precaucion trabajamos con una copia
+calles_linered <- calles_line
+st_geometry(calles_linered) <- st_geometry(calles_linered) |>
+  lapply(function(x) round(x, 0)) |>
+  st_sfc(crs = st_crs(calles_linered))
 
+#calles_linered <- st_snap_to_grid(calles_line, size = 1)
+#No funciona
 
+table(calles_linered$highway, DOBLE_MANO = calles_linered$oneway, exclude = NULL)
 
+## Imputamos a doble mano todas las calles que no están clasificadas
+calles_linered <- calles_linered |>
+  mutate(oneway = ifelse(is.na(oneway), "no", oneway))
+
+### Duplicamos calles con doblevía
+calle_aux <- calles_linered |> filter(oneway == "no") |> st_reverse()
+calles_linered <- rbind(calles_linered, calle_aux)
+
+# Armado red urbana -------------------------------------------

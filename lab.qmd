@@ -1,0 +1,182 @@
+---
+title: "prueba"
+format: html
+editor: visual
+---
+
+## Quarto
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+## Running Code
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{r}
+1 + 1
+```
+
+You can add options to executable code like this
+
+```{r}
+#| echo: false
+2 * 2
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
+
+```{r}
+#guardamos
+dir.create("data/processed", recursive = TRUE, showWarnings = FALSE)
+st_write(PERGAMINO,   "data/processed/pergamino_area.gpkg",    delete_dsn = TRUE)
+st_write(calles_osm,  "data/processed/calles_osm_raw.gpkg",    delete_dsn = TRUE)
+st_write(calles_line, "data/processed/calles_line.gpkg",       delete_dsn = TRUE)
+
+dir.create("data/raw", recursive = TRUE, showWarnings = FALSE)
+dir.create("data/processed", recursive = TRUE, showWarnings = FALSE)
+
+saveRDS(calles_osm, "data/raw/calles_osm.rds")
+saveRDS(calles_per, "data/processed/calles_per.rds")
+saveRDS(calles_line, "data/processed/calles_line.rds")
+saveRDS(calles_linered, "data/processed/calles_linered.rds")
+saveRDS(calle_aux, "data/processed/calle_aux.rds")
+
+calles_osm <- readRDS("data/raw/calles_osm.rds")
+
+calles_per <- readRDS("data/processed/calles_per.rds")
+
+calles_line <- readRDS("data/processed/calles_line.rds")
+
+calles_linered <- readRDS("data/processed/calles_linered.rds")
+```
+
+```{r}
+calles_line |>
+  filter(name == "Ex-Ruta Nacional 8") |>
+  select(osm_id, name, highway)
+```
+
+ 
+
+```{r}
+calles_line |>
+  filter(highway == "primary") |>
+  count(name, sort = TRUE)
+```
+
+```{r}
+ruta8 <- calles_line |>
+  filter(name == "Ex-Ruta Nacional 8")
+
+plot(st_geometry(ruta8), col = "red", lwd = 3)
+```
+
+ 
+
+```{r}
+plot(st_geometry(calles_line),
+     col = "grey70",
+     lwd = 1)
+
+plot(st_geometry(ruta8),
+     col = "red",
+     lwd = 3,
+     add = TRUE)
+```
+
+```{r}
+calles_line |>
+  filter(name %in% c("Ex-Ruta Nacional 8",
+                     "Avenida Malvinas Argentinas")) |>
+  select(osm_id, name, highway, geometry)
+```
+
+```{r}
+plot(st_geometry(calles_line),
+     col = "grey80",
+     lwd = 1)
+
+plot(st_geometry(
+  calles_line |>
+    filter(name %in% c("Ex-Ruta Nacional 8",
+                       "Avenida Malvinas Argentinas"))
+),
+col = "red",
+lwd = 3,
+add = TRUE)
+```
+
+```{r}
+malvinas <- calles_line |>
+  filter(name == "Avenida Malvinas Argentinas")
+
+ruta8 <- calles_line |>
+  filter(name == "Ex-Ruta Nacional 8")
+
+plot(st_geometry(malvinas),
+     col = "blue",
+     lwd = 3)
+
+plot(st_geometry(ruta8),
+     col = "red",
+     lwd = 3,
+     add = TRUE)
+```
+
+```{r}
+plot(st_geometry(malvinas),
+     col = "blue",
+     lwd = 3)
+
+plot(st_geometry(ruta8),
+     col = "red",
+     lwd = 3,
+     add = TRUE)
+legend("topright",
+       legend = c("Avenida Malvinas Argentinas",
+                  "Ex-Ruta Nacional 8"),
+       col = c("blue", "red"),
+       lwd = 3)
+```
+
+```{r}
+plot(st_geometry(ruta8),
+     col = "red",
+     lwd = 4)
+```
+
+```{r}
+st_bbox(ruta8)
+st_bbox(malvinas)
+```
+
+```{r}
+st_distance(
+  st_geometry(ruta8),
+  st_geometry(malvinas)
+) |>
+  as.matrix()
+```
+
+```{r}
+PERGAMINO_5347 <- st_transform(PERGAMINO, 5347)
+
+st_intersects(
+  ruta8,
+  PERGAMINO_5347,
+  sparse = FALSE
+)
+```
+
+```{r}
+head(st_coordinates(calles_line), 10)
+
+head(st_coordinates(calles_linered), 10)
+```
+
+```{r}
+max(abs(
+  st_coordinates(calles_line)[, 1:2] -
+    st_coordinates(calles_linered)[, 1:2]
+))
+```
