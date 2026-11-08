@@ -1,16 +1,17 @@
 
 #Librerias ---------------------------------------------------------------------
-library(tidyverse)
-library(sf)
-library(geos)
-library(leaflet)
-library(igraph)
-library(tidygraph)
-library(sfnetworks)
-library(osmdata)
-library(units)
-library(mapview)
-options(scipen = 999)
+  library(tidyverse)
+  library(sf)
+  library(geos)
+  library(leaflet)
+  library(igraph)
+  library(tidygraph)
+  library(sfnetworks)
+  library(osmdata)
+  library(units)
+  library(mapview)
+  library(dbscan)
+  options(scipen = 999)
 
 #Consigna A: Obtención de la red desde OSM--------------------------------------
 
@@ -250,4 +251,50 @@ calles_clean <- lineint |>
 #tránsito vehicular o peatonal macro 
 
 
-# Armado red urbana -------------------------------------------
+# Consigna C: Armado red urbana -------------------------------------------
+perga_net <- as_sfnetwork(lineint, directed = TRUE)
+
+##Limpieza_ 
+# Subdividir (2) -> Simplificar (1) -> Simplificar intersectiones (4) -> Suavizado de pseudo nodes (3)
+# 1. Subdividir: Corta las líneas en cada intersección geométrica (cuando se 
+#cruzan ) Necesitamos que cada tramo entre intersecciones sea una arista independiente 
+#antes de empezar a fusionar o simplificar nodos..
+perga_net2 <-  perga_net |>
+  convert(to_spatial_subdivision) |>
+
+  #2. Simplificar: Elimina vértices redundantes que no aportan a la topología 
+#(reduciendo el peso y la cantidad de puntos innecesarios en el objeto sf).
+  activate("edges") |>
+  arrange(edge_length()) |>
+  filter(!edge_is_multiple()) |>
+  filter(!edge_is_loop())
+
+#3. Simplificar Intersecciones: Agrupa nodos muy cercanos (por ejemplo, intersecciones 
+#complejas, rotondas desdobladas  en un único nodo. 
+
+# Retener las coordenadas de los nodos.
+clusters <- perga_net2 |>
+  activate("nodes") |>
+  st_coordinates() |>
+  
+# Nodos dentro de una distancia de 3 (mts) entre sí estarán en el mismo clúster.
+# A un nodo se le asigna un clúster incluso si es el único miembro de ese clúster.
+  dbscan(eps = 3, minPts = 1) |>
+  pluck("cluster")
+
+perga_net2 <- perga_net2 |>
+  activate("nodes") |>
+  mutate(cls = clusters,               # Sumar la informacion de los clusters a los nodos de la red
+         cmp = group_components()) |>  # Verificar que los  nodos agrupados estén conectados en la red.
+
+# Contraer la red (utilizando centroide del clúster y eliminando nodos individuales)
+  convert(to_spatial_contracted,
+          cls, # cmp,
+          simplify = TRUE)
+
+
+# 3. Smooth Pseudo Nodes: elimina pseudonodos, es decir, nodos que no representan 
+#intersecciones reales.
+perga_net2 <- perga_net2 |>
+  convert(to_spatial_smooth)
+
