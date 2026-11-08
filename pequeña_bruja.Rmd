@@ -30,7 +30,7 @@ plot(pressure)
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
 
 ```{r}
-> calles_line <- readRDS("C:/M/parcial_geoC/data/processed/calles_line.rds")
+calles_line <- readRDS("C:/M/parcial_geoC/data/processed/calles_line.rds")
 ```
 
 ```{r}
@@ -41,7 +41,7 @@ st_geometry(calles_linedup) <- st_geometry(calles_line)  |>
 ```
 
 ```{r}
-calles_linedup %>%
+calles_linered %>%
   st_drop_geometry() %>%
   filter(
     highway %in% c("primary", "secondary", "tertiary", "trunk"),
