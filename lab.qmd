@@ -40,6 +40,8 @@ saveRDS(calles_per, "data/processed/calles_per.rds")
 saveRDS(calles_line, "data/processed/calles_line.rds")
 saveRDS(calles_linered, "data/processed/calles_linered.rds")
 saveRDS(calle_aux, "data/processed/calle_aux.rds")
+saveRDS(calles_lineimp, "data/processed/calles_lineimp.rds")
+saveRDS(lineint, "data/processed/lineint.rds")
 
 calles_osm <- readRDS("data/raw/calles_osm.rds")
 
@@ -48,6 +50,7 @@ calles_per <- readRDS("data/processed/calles_per.rds")
 calles_line <- readRDS("data/processed/calles_line.rds")
 
 calles_linered <- readRDS("data/processed/calles_linered.rds")
+
 ```
 
 ```{r}
