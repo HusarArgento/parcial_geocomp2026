@@ -44,7 +44,12 @@ saveRDS(calles_lineimp, "data/processed/calles_lineimp.rds")
 saveRDS(lineint, "data/processed/lineint.rds")
 saveRDS(perga_net, file = "red_pergamino_preprocesada.rds")
 saveRDS(perga_net2, file = "red_pergamino_procesada.rds")
+saveRDS(perganet_aux, file = "data/processed/perganet_aux.rds")
+saveRDS(perganet_clean, file = "data/processed/perganet_clean.rds")
+saveRDS(resumen_perga, file = "data/processed/resumen_perga.rds")
+saveRDS(comp_4_net, file = "data/processed/comp_4_net.rds")
 
+perga_net2 <- readRDS(perga_net2, file = "red_pergamino_procesada.rds")
 calles_osm <- readRDS("data/raw/calles_osm.rds")
 
 calles_per <- readRDS("data/processed/calles_per.rds")
@@ -307,5 +312,170 @@ ggsave(
   width = 8, 
   height = 6, 
   dpi = 300
+)
+```
+
+```{r}
+perga_net2 = red_pergamino_procesada
+rm(red_pergamino_procesada)
+
+perga_net = red_pergamino_preprocesada
+rm(red_pergamino_preprocesada)
+
+components(perga_net)$no
+components(perga_net2)$no
+components(perga_net2)$csize
+
+```
+
+```{r}
+comp_2_net <- perga_net2 |>
+  activate("nodes") |>
+  mutate(componente = components(perga_net2)$membership) |>
+  filter(componente == 2)
+
+plot(comp_2_net)
+```
+
+```{r}
+comp_4_net <- perga_net2 |>
+  activate("nodes") |>
+  mutate(componente = components(perga_net2)$membership) |>
+  filter(componente == 4)
+
+plot(comp_4_net)
+```
+
+```{r}
+library(tibble)
+library(sfnetworks)
+library(igraph)
+library(dplyr)
+
+resumen_perga <- tibble(
+  red = "Pergamino (Componente Principal)",
+  nodos = igraph::gorder(perganet_clean),
+  ejes = igraph::gsize(perganet_clean),
+  longitud_km = perganet_clean |> 
+    activate("edges") |> 
+    as_tibble() |> 
+    pull(edge_length()) |> 
+    sum(na.rm = TRUE) |> 
+    units::set_units("m") |> 
+    units::set_units("km") |> 
+    as.numeric() |> 
+    round(2),
+  grado_medio = mean(igraph::degree(perganet_clean)) |> round(2),
+  densidad = igraph::edge_density(perganet_clean) |> round(6)
+)
+```
+
+```{r}
+
+
+resumen_perga <- tibble(
+  red = "Pergamino (Componente Principal)",
+  nodos = igraph::gorder(perganet_clean),
+  ejes = igraph::gsize(perganet_clean),
+  
+  # Corrección para extraer la longitud total sin el error de edge_length()
+  longitud_km = perganet_clean |> 
+    activate("edges") |> 
+    as_tibble() |> 
+    mutate(len = st_length(geometry)) |> 
+    pull(len) |> 
+    sum(na.rm = TRUE) |> 
+    units::set_units("m") |> 
+    units::set_units("km") |> 
+    as.numeric() |> 
+    round(2),
+  
+  grado_medio = mean(igraph::degree(perganet_clean)) |> round(2),
+  densidad = igraph::edge_density(perganet_clean) |> round(6)
+)
+```
+
+```{r}
+library(sfnetworks)
+library(dplyr)
+
+perganet_clean |> 
+  activate("edges") |> 
+  as_tibble() |> 
+  head()
+```
+
+```{r}
+
+
+ggplot() +
+  # Dibujamos las aristas coloreadas según tu campo imputado maxspeed_imp
+  geom_sf(
+    data = st_as_sf(perganet_clean, "edges"), 
+    aes(color = as.factor(maxspeed_imp)), 
+    linewidth = 0.6, 
+    alpha = 0.8
+  ) +
+  
+  # Paleta de colores para las distintas categorías de velocidad
+  scale_color_manual(
+    name = "Velocidad Máxima\nImputada (km/h)",
+    values = c(
+      "30" = "gray70",      # Calles locales
+      "40" = "skyblue",     # Colectoras secundarias
+      "60" = "orange",      # Avenidas
+      "80" = "firebrick",   # Rutas o arterias rápidas
+      "110" = "darkviolet"  # Autopistas / Circunvalación
+    ),
+    na.value = "grey85"     # Color de respaldo para tramos sin valor
+  ) +
+  
+  theme_void() +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(face = "bold", size = 12)
+  ) +
+  labs(title = "Jerarquía Vial de Pergamino por Velocidad Imputada")
+```
+
+```{r}
+
+
+ggplot() +
+  # Dibujamos las aristas coloreadas según maxspeed_imp como factor
+  geom_sf(
+    data = st_as_sf(perganet_clean, "edges"), 
+    aes(color = as.factor(maxspeed_imp)), 
+    linewidth = 0.6, 
+    alpha = 0.85
+  ) +
+  
+  # Opción A: Usando paleta Viridis discreta (excelente contraste visual)
+  scale_color_viridis_d(
+    name = "Velocidad\n(km/h)",
+    option = "viridis", # Probá también con "viridis", "inferno", "cividis" o "magma"
+    na.value = "grey80"
+  ) +
+  
+  # O P C I Ó N  B (Comentada): Si preferís una paleta tipo ColorBrewer (ej: "YlOrRd")
+  # scale_color_brewer(
+  #   name = "Velocidad\n(km/h)",
+  #   palette = "YlOrRd", # Amarillo-Naranja-Rojo (ideal para velocidad)
+  #   na.value = "grey80"
+  # ) +
+  
+  theme_void() +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(face = "bold", size = 12),
+    plot.background = element_rect(fill = "white", color = NA) 
+  ) +
+  labs(title = "Jerarquía Vial de Pergamino")
+
+ggsave(
+  filename = "Pergamino_velocidades.png", 
+  width = 8,       # Ancho en pulgadas
+  height = 6,      # Alto en pulgadas
+  dpi = 300        # Resolución (300 dpi es estándar de calidad para impresión/papers)
 )
 ```

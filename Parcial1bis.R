@@ -298,3 +298,140 @@ perga_net2 <- perga_net2 |>
 perga_net2 <- perga_net2 |>
   convert(to_spatial_smooth)
 
+components(perga_net)$no #Cantidad de componentes: 391
+components(perga_net2)$no #Cantidad de componentes: 32
+components(perga_net2)$csize 
+#Cantidad de aristas de las componentes (tamaño componentes)
+#[1]    4392    3    1   35   23   13    2    1    1    1    1   27   18    1    4    1    2    1    3    2    3    1    2    1
+#[25]    1     1    1    1    1    1    2    2
+
+#Previo al procesamiento nuestra red (perga_net), tenía 391 componentes conexas ($no[1] 391) . 
+#Es decir, una red cruda de de  cientos de pedazos debido a discontinuidadesa tales como micro-desfasajes en las esquinas o nodos no conectados 
+#y otros errores de digitalización.
+#Luego  de procesar topologicamente la red,  (perga_net2),  el número de componentes bajo a 32 ($no[1] 32), 
+#eliminando 359 falsas rupturas 
+
+#Por otro lado, el tamaño de las componentes ($csize) nos muestra  que la estructura se concentra masivamente en una componente principal de 4392$ elementos, 
+#mientras que los $31 fragmentos restantes pertenecen a componentes secundarias o islotes de conectividad perifericos. 
+#Para proceder con los análisis de ruteo y accesibilidad, conservaremos solo  la componente principal, descartando las redes secundarias por tratarse de artefactos 
+#de digitalización inconclusos.
+
+# Visualizamos componetes: Extraemos los nodos de la red y lo convertimos en un objeto espacial, 
+# luego extraemos un vector que identifica a que componentes se vincula cada nodo, 
+#luego lo convertimos en factores, es decir variables categoricas, agregandolas a la nueva 
+#columna, "componente".
+
+perganet_aux <- perga_net2 |>
+  st_as_sf("nodes") |>
+  mutate(componente = factor(components(perga_net2)$membership)) |>
+  st_transform(4326)
+
+factpal <- colorFactor(topo.colors(length(unique(perganet_aux$componente))),
+                      perganet_aux$componente)
+
+perganet_aux |>
+  leaflet() |>
+  addTiles() |>
+  addPolygons(data = st_transform(st_as_sf(perga_net2, "edges"), 4326)) |>
+  addCircles(color = ~factpal(componente))
+
+
+#Nota especial sobre la componente 4:
+#Chequeando las geometrias por separado la componente 4 llamo mi atencion especialmente por su rectangular 
+#con lo que podria ser una  playa de maniobras, o un circuito cerrado de una fabrica /  polo industrial, por sus  viales internos. 
+#Se dalo visto en clase, de  que no siempre las  componentes se deben a errores de digitalizacion, sino que a veces
+#constituyen infraestructuras espacuales
+
+
+### Retenemos el componente principal de la red y ponderamos la red por la distancia del eje
+perganet_clean <- perga_net2 |>
+  filter(group_components() == 1) |>    
+  activate("edges") |>
+  mutate(weight = edge_length())        
+
+## Agregamos informacion de componentes a los nodos 
+perganet_clean <- perganet_clean |>
+  activate("nodes") |>
+  mutate(comp = group_components())
+
+# Reporte de nodos y aristas
+igraph::gorder(perganet_clean) # nodos
+#[1] 4392 nodos
+
+igraph::gsize(perganet_clean)  # ejes
+#[1] 10695
+
+
+#El reporte
+resumen_perga <- tibble(
+  red = "Pergamino (Componente Principal)",
+  nodos = igraph::gorder(perganet_clean),
+  ejes = igraph::gsize(perganet_clean),
+  longitud_km = perganet_clean |> 
+    activate("edges") |> 
+    as_tibble() |> 
+    mutate(len = st_length(geometry)) |> 
+ 
+        # 1. Extrae los datos de la tabla y los convierte en un vector plano de R
+    pull(len) |> 
+    
+    # 2. Acumula todos los tramos individuales en un único valor total (mantiene la clase de unidad)
+    sum(na.rm = TRUE) |> 
+    
+    # 3. Asegura y fija explícitamente la unidad base del acumulado como metros
+    units::set_units("m") |> 
+    
+    # 4. Realiza la conversión matemática automática de metros a kilómetros
+    units::set_units("km") |> 
+    
+    # 5. Despoja la etiqueta de unidad para dejar un número plano apto para el tibble y round()
+    as.numeric() |> 
+    round(2),
+  
+  grado_medio = mean(igraph::degree(perganet_clean)) |> round(2),
+  densidad = igraph::edge_density(perganet_clean) |> round(6)
+)
+
+#Red                               Nodos  Ejes  Longitud   GradoM  Denisdad
+#Pergamino (Componente Principal)	 4392	 10695	795.14	    4.87	0.00055
+
+# Tenemos 4392 Nodos es decir el total de intersecciones de la zona urbana de Pergamino  
+#y 10.695 aristas o tramos viales dirigidos. Por otro lado, el grado medio 4.87 
+#nos dice que tenemos casi 5 conexiones por nodo, por lo cual seguramente convergen 
+#esquinas de 3 y 4 ramas, como el caso del CID Campeador en CABA, sumado al efecto 
+#del grafo dirigido (aristas de doble sentido contabilizadas en ambas direcciones).
+
+# La densidad de una red mide  el porcentaje de conexiones reales frente al total 
+# de conexiones teóricas posibles si cada nodo estuviera conectado directamente con todos 
+# los demás al mismo tiempo. El número de aristas reales es de 10.695, con un porcentaje de 0.05%  
+# muestra una proporcion realmente pequeña. Si la densidad diera cercana a 1, significaría 
+#que la ciudad es un entramado del caos en la que cada esquina tendría  una autopista directa 
+#hacia cualquier otro punto de la ciudad. 
+# Seria interesante compararla con CABA, y con megaurbes como Chongqing en China. 
+#Ademas es ideal para pensar esas marañas para pensar las megalopolis distopicas 
+#de generos literarios como el cyberpunk 
+
+
+#Hacemos grafico
+ggplot() +
+  # Dibujamos las aristas coloreadas según maxspeed_imp como factor
+  geom_sf(
+    data = st_as_sf(perganet_clean, "edges"), 
+    aes(color = as.factor(maxspeed_imp)), 
+    linewidth = 0.6, 
+    alpha = 0.85
+  ) +
+  scale_color_viridis_d(
+    name = "Velocidad\n(km/h)",
+    option = "viridis", 
+    na.value = "grey80"
+    ) + 
+  theme_void() +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(face = "bold", size = 12),
+    plot.background = element_rect(fill = "white", color = NA) 
+  ) +
+  labs(title = "Jerarquía Vial de Pergamino")
+
+#Consigna D: Ruteo  -------------------------------------------
