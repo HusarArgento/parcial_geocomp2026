@@ -49,6 +49,11 @@ saveRDS(perganet_clean, file = "data/processed/perganet_clean.rds")
 saveRDS(resumen_perga, file = "data/processed/resumen_perga.rds")
 saveRDS(comp_4_net, file = "data/processed/comp_4_net.rds")
 
+saveRDS(perganet_blend, file = "data/processed/perganet_blend.rds")
+saveRDS(perganet_time, file = "data/processed/perganet_time.rds")
+saveRDS(POI, file = "data/processed/POI.rds")
+
+
 perga_net2 <- readRDS(perga_net2, file = "red_pergamino_procesada.rds")
 calles_osm <- readRDS("data/raw/calles_osm.rds")
 
@@ -478,4 +483,52 @@ ggsave(
   height = 6,      # Alto en pulgadas
   dpi = 300        # Resolución (300 dpi es estándar de calidad para impresión/papers)
 )
+```
+
+```{r}
+perganet_blend <- perganet_clean |>
+  activate("nodes") |> 
+  st_network_blend(POI) |> #incrusto puntos
+  activate("edges") |>
+  mutate(weight = edge_length()) |> #recalculo aristas
+  activate("nodes")
+```
+
+```{perganet_time <- perganet_blend |>}
+  activate("edges") |>
+  mutate(
+    speed_kmh = case_when(
+      !is.na(maxspeed_imp) ~ maxspeed_imp,
+      TRUE                 ~ 40
+    ),
+    # Conversión física y cálculo de peso en minutos para igraph
+    speed    = set_units(set_units(speed_kmh, "km/h"), "m/s"),
+    time_sec = edge_length() / speed,
+    weight   = drop_units(set_units(time_sec, "minutes"))
+  ) |>
+  select(geometry, weight, maxspeed_imp) |>
+  activate("nodes")
+```
+
+```{r}
+perganet_time <- perganet_blend |>
+  activate("edges") |>
+  mutate(
+    # 1. Definimos velocidad base (con tu case_when o maxspeed_imp)
+    speed_kmh = case_when(
+      !is.na(maxspeed_imp) ~ maxspeed_imp,
+      TRUE                 ~ 40
+    ),
+    speed  = units::set_units(speed_kmh, "km/h"), #como el dato esta plano le etiquetamos una unidad para despues pasarla a la que necesitamos que es metros por segundo
+    speed  = units::set_units(speed, "m/s"),
+    dist_m = edge_length(),
+    time   = weight / speed,         # Resultado en segundos (m / (m/s)) porque los metros se anulan automaticamente
+    time   = units::set_units(time, "minutes"),# Lo pasamos a minutos
+    time   = units::drop_units(time),          # Quitamos unidades para igraph
+    
+    # 4. Asignamos ese 'time' limpio al 'weight' que exige la red
+    weight = time
+  ) |>
+  select(geometry, weight, maxspeed_imp) |>
+  activate("nodes")
 ```

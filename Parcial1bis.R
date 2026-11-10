@@ -1,17 +1,18 @@
 
 #Librerias ---------------------------------------------------------------------
-  library(tidyverse)
-  library(sf)
-  library(geos)
-  library(leaflet)
-  library(igraph)
-  library(tidygraph)
-  library(sfnetworks)
-  library(osmdata)
-  library(units)
-  library(mapview)
-  library(dbscan)
-  options(scipen = 999)
+library(tidyverse)
+library(sf)
+library(geos)
+library(dbscan)
+library(leaflet)
+library(igraph)
+library(tidygraph)
+library(sfnetworks)
+library(osmdata)
+library(units)
+library(mapview)
+library(dbscan)
+options(scipen = 999)
 
 #Consigna A: Obtención de la red desde OSM--------------------------------------
 
@@ -435,3 +436,102 @@ ggplot() +
   labs(title = "Jerarquía Vial de Pergamino")
 
 #Consigna D: Ruteo  -------------------------------------------
+
+POI <- data.frame(
+  poi  = c("Parque General San Martin",
+           "Hospital San Jose",
+           "Instituto Superior JVG",
+           "Centro Civico", 
+           "Barrio Guemes Norte"),
+  tipo = "Orig",
+  x    = c(-60.5727, -60.5857, -60.5816, -60.5747, -60.5996),   # longitud
+  y    = c(-33.9066, -33.9101, -33.8923, -33.8972, -33.8867)    # latitud
+) |>
+  st_as_sf(coords = c("x", "y"), crs = 4326) |>   # tabla -> objeto sf
+  st_transform(st_crs(perganet_clean))                     # al mismo CRS que las calles
+
+#Ahora incrustamos}
+perganet_blend <- perganet_clean |>
+  activate("nodes") |> 
+  st_network_blend(POI) |> #incrusto puntos
+  activate("edges") |>
+  mutate(weight = edge_length()) |> #recalculo aristas
+  activate("nodes")
+
+# Matriz de costos para los POI - ponderada por longitud (5x5)
+cost_matrix <- st_network_cost(
+  perganet_blend,
+  from = POI,
+  to = POI,   #la principial diferencia con el ejercicio que vimos de plazas y escuelas, aca es entr los puntos
+  weights = "weight"
+)
+rownames(cost_matrix) <- POI$poi
+colnames(cost_matrix) <- POI$poi
+
+# Ver la matriz formateada
+print(cost_matrix)
+
+# Units: [m]
+#                               Parque General San Martin   Hospital San Jose    Instituto Superior JVG
+# Parque General San Martin                     0.000          1731.172               2950.299
+# Hospital San Jose                          2247.467             0.000               2592.803
+# Instituto Superior JVG                     2456.966          2332.539                  0.000
+# Centro Civico                              1481.736          2254.806               1484.538
+# Barrio Guemes Norte                        4295.463          4064.790               1960.592
+                            
+                              # Centro Civico     Barrio Guemes Norte
+
+# Parque General San Martin     1833.0993            4563.845
+# Hospital San Jose             2092.4118            4135.132
+# Instituto Superior JVG         975.2294            2115.333
+# Centro Civico                    0.0000            3061.165
+# Barrio Guemes Norte           2915.3189               0.000
+
+# Vamos por tiempo ahora
+perganet_time <- perganet_blend |>
+  activate("edges") |>
+  mutate(
+    # 1. Definimos velocidad base (con tu case_when o maxspeed_imp)
+    speed_kmh = case_when(
+      !is.na(maxspeed_imp) ~ maxspeed_imp,
+      TRUE                 ~ 40
+    ),
+    speed  = units::set_units(speed_kmh, "km/h"), #como el dato esta plano le etiquetamos una unidad para despues pasarla a la que necesitamos que es metros por segundo
+    speed  = units::set_units(speed, "m/s"),
+    dist_m = edge_length(),
+    time   = weight / speed,         # Resultado en segundos (m / (m/s)) porque los metros se anulan automaticamente
+    time   = units::set_units(time, "minutes"),# Lo pasamos a minutos
+    time   = units::drop_units(time),          # Quitamos unidades para igraph
+      # 4. Asignamos ese 'time' limpio al 'weight' que exige la red
+    weight = time
+  ) |>
+  select(geometry, weight, maxspeed_imp) |>
+  activate("nodes")
+
+# Matriz de costos temporal (5x5)
+cost_matrix_time <- st_network_cost(
+  perganet_time,
+  from = POI,
+  to = POI,
+  weights = "weight"
+  )
+
+rownames(cost_matrix_time) <- POI$poi
+colnames(cost_matrix_time) <- POI$poi
+
+print(cost_matrix_time)
+# 
+#                                 Parque General San Martin   Hospital San Jose    Instituto Superior JVG
+# Parque General San Martin                  0.000000          2.369875               3.789398
+# Hospital San Jose                          3.081857          0.000000               2.839834
+# Instituto Superior JVG                     3.333415          2.479769               0.000000
+# Centro Civico                              2.037436          2.807233               2.088816
+# Barrio Guemes Norte                        5.369822          5.092738               2.806413
+# 
+#                                Centro Civico    Barrio Guemes Norte
+# Parque General San Martin      2.590901            5.651578
+# Hospital San Jose              2.592526            5.093470
+# Instituto Superior JVG         1.473192            2.788012
+# Centro Civico                  0.000000            4.342451
+# Barrio Guemes Norte            4.086161            0.000000
+
