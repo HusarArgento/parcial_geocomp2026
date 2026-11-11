@@ -49,6 +49,32 @@ saveRDS(perganet_clean, file = "data/processed/perganet_clean.rds")
 saveRDS(resumen_perga, file = "data/processed/resumen_perga.rds")
 saveRDS(comp_4_net, file = "data/processed/comp_4_net.rds")
 
+saveRDS(perganet_blend, file = "data/processed/perganet_blend.rds")
+saveRDS(perganet_time, file = "data/processed/perganet_time.rds")
+saveRDS(POI, file = "data/processed/POI.rds")
+
+saveRDS(grilla_hex, file = "data/processed/grilla_hex.rds")
+saveRDS(grilla_hex_geom, file = "data/processed/grilla_hex_geom.rds")
+saveRDS(grilla_final, file = "data/processed/grilla_final.rds")
+saveRDS(nodos_grilla, file = "data/processed/nodos_grilla.rds")
+saveRDS(nodos_sf, file = "data/processed/nodos_sf.rds")
+saveRDS(p1, file = "data/processed/p1.rds")
+saveRDS(g_mts, file = "data/processed/g_mts.rds")
+saveRDS(g_time, file = "data/processed/g_time.rds")
+saveRDS(area_estudio, file = "data/processed/area_estudio.rds")
+saveRDS(candidatas, file = "data/processed/candidatas.rds")
+saveRDS(perganet_metrics, file = "data/processed/perganet_metrics.rds")
+saveRDS(perganet_timetrics, file = "data/processed/perganet_timetrics.rds")
+saveRDS(resumen_hex, file = "data/processed/resumen_hex.rds")
+saveRDS(tabla_nodos_mts, file = "data/processed/tabla_nodos_mts.rds")
+saveRDS(tabla_max_centralidad_mts, file = "data/processed/tabla_max_centralidad_mts.rds")
+saveRDS(tabla_centralizacion_global_blend, file = "data/processed/tabla_centralizacion_global_blend.rds")
+saveRDS(tabla_centralizacion_global, file = "data/processed/tabla_centralizacion_global.rds")
+
+
+
+
+
 perga_net2 <- readRDS(perga_net2, file = "red_pergamino_procesada.rds")
 calles_osm <- readRDS("data/raw/calles_osm.rds")
 
@@ -479,3 +505,461 @@ ggsave(
   dpi = 300        # Resolución (300 dpi es estándar de calidad para impresión/papers)
 )
 ```
+
+```{r}
+perganet_blend <- perganet_clean |>
+  activate("nodes") |> 
+  st_network_blend(POI) |> #incrusto puntos
+  activate("edges") |>
+  mutate(weight = edge_length()) |> #recalculo aristas
+  activate("nodes")
+```
+
+```{perganet_time <- perganet_blend |>}
+  activate("edges") |>
+  mutate(
+    speed_kmh = case_when(
+      !is.na(maxspeed_imp) ~ maxspeed_imp,
+      TRUE                 ~ 40
+    ),
+    # Conversión física y cálculo de peso en minutos para igraph
+    speed    = set_units(set_units(speed_kmh, "km/h"), "m/s"),
+    time_sec = edge_length() / speed,
+    weight   = drop_units(set_units(time_sec, "minutes"))
+  ) |>
+  select(geometry, weight, maxspeed_imp) |>
+  activate("nodes")
+```
+
+```{r}
+perganet_time <- perganet_blend |>
+  activate("edges") |>
+  mutate(
+    # 1. Aseguramos conservar la distancia métrica original en una columna propia
+    dist_m = edge_length(),
+    weight_mts = drop_units(dist_m), # Por si necesitabas metros limpios
+    
+    # 2. Definimos velocidad base
+    speed_kmh = case_when(
+      !is.na(maxspeed_imp) ~ maxspeed_imp,
+      TRUE                 ~ 40
+    ),
+    speed = units::set_units(speed_kmh, "km/h"),
+    speed = units::set_units(speed, "m/s"),
+    
+    # 3. Calculamos el tiempo en minutos
+    time_sec = dist_m / speed,                               # Segundos
+    time_min = units::set_units(time_sec, "minutes"),        # Minutos
+    weight_time = units::drop_units(time_min)                # NUEVA columna exclusiva de tiempo
+  ) |>
+  # Seleccionamos las geometrías y AMBOS pesos para no perder nada
+  select(geometry, weight_mts, weight_time, maxspeed_imp) |>
+  activate("nodes")
+```
+
+```{r}
+perganet_time <- perganet_blend |>
+  activate("edges") |>
+  mutate(
+    # 1. Definimos velocidad base (con tu case_when o maxspeed_imp)
+    speed_kmh = case_when(
+      !is.na(maxspeed_imp) ~ maxspeed_imp,
+      TRUE                 ~ 40
+    ),
+    speed  = units::set_units(speed_kmh, "km/h"), #como el dato esta plano le etiquetamos una unidad para despues pasarla a la que necesitamos que es metros por segundo
+    speed  = units::set_units(speed, "m/s"),
+    dist_m = edge_length(),
+    time   = weight / speed,         # Resultado en segundos (m / (m/s)) porque los metros se anulan automaticamente
+    time   = units::set_units(time, "minutes"),# Lo pasamos a minutos
+    time   = units::drop_units(time),          # Quitamos unidades para igraph
+    
+    # 4. Asignamos ese 'time' limpio al 'weight' que exige la red
+    weight = time
+  ) |>
+  select(geometry, weight, maxspeed_imp) |>
+  activate("nodes")
+
+
+```
+
+```{r}
+library(tidygraph)
+library(sfnetworks)
+
+# Cálculo de centralidades sobre la red ponderada por tiempo y distancia
+perganet_centrality <- perganet_time |>
+  activate("nodes") |>
+  mutate(
+    degree        = centrality_degree(mode = "in"),
+    closeness_t   = centrality_closeness(weights = time, normalized = TRUE),
+    closeness_mts = centrality_closeness(weights = weight, normalized = TRUE),
+    betweenness_t = centrality_betweenness(weights = time, normalized = TRUE),
+    betweenness_mts = centrality_betweenness(weights = weight, normalized = TRUE)
+  ) |>
+  activate("edges") |>
+  mutate(
+    edge_flow = centrality_edge_betweenness(weights = time, directed = TRUE)
+  ) |>
+  activate("nodes")
+```
+
+```{head(st_as_sf(perganet_time, "edges"))}
+colnames(st_as_sf(perganet_time, "edges"))
+
+```
+
+```{r}
+perganet_metrics_mts <- perganet_blend |>
+  activate("nodes") |>
+  mutate(
+    degree        = centrality_degree(mode = "in"),
+    closeness_mts = centrality_closeness(weights = weight, normalized = TRUE),
+    betweenness_mts = centrality_betweenness(weights = weight, normalized = TRUE)
+  ) |>
+  activate("nodes")
+```
+
+```{r}
+perganet_timetrics <- perganet_time |>
+  activate("nodes") |>
+  mutate(
+    degree          = centrality_degree(mode = "in"),
+    closeness_time  = centrality_closeness(weights = weight, normalized = TRUE),
+    betweenness_time = centrality_betweenness(weights = weight, normalized = TRUE)
+  ) |>
+  activate("edges") |>
+  mutate(
+    edge_flow       = centrality_edge_betweenness(weights = weight, directed = TRUE)
+  ) |>
+  activate("nodes")
+```
+
+```{r}
+
+# 1. Extraemos los nodos de tu red métrica con sus valores
+nodos_mts <- st_as_sf(perganet_metrics_mts, "nodes")
+
+# 2. Suponiendo que tenés tus POIs cargados en un objeto espacial llamado 'pois' 
+# (o podés filtrar por cercanía espacial a las coordenadas de cada punto clave):
+# Vamos a hacer un "spatial join" para cruzar tus POIs con los nodos de la red centralizada:
+
+pois_con_centralidad <- st_join(pois, nodos_mts, join = st_nearest_feature)
+
+# 3. Seleccionamos y mostramos la tablita limpia en consola
+tabla_pois_mts <- pois_con_centralidad |>
+  select(nombre_poi, degree, closeness_mts, betweenness_mts)
+
+print(tabla_pois_mts)
+```
+
+```{r}
+tabla_centralizacion_global <- tibble(
+  Red = c("Métrica (Metros)", "Temporal (Minutos)"),
+  Centr_Grado = c(
+    igraph::centr_degree(as.igraph(perganet_metrics_mts))$centralization |> round(4),
+    igraph::centr_degree(as.igraph(perganet_timetrics))$centralization |> round(4)
+  ),
+  Centr_Intermediacion = c(
+    igraph::centr_betw(as.igraph(perganet_metrics_mts), directed = TRUE)$centralization |> round(4),
+    igraph::centr_betw(as.igraph(perganet_timetrics), directed = TRUE)$centralization |> round(4)
+  ),
+  Centr_Cercania = c(
+    igraph::centr_clo(as.igraph(perganet_metrics_mts))$centralization |> round(4),
+    igraph::centr_clo(as.igraph(perganet_timetrics))$centralization |> round(4)
+  )
+)
+
+print(tabla_centralizacion_global)
+```
+
+```{r}
+perganet_blend |>
+  activate("edges") |>
+  as_tibble() |>
+  count(maxspeed_imp)
+
+```
+
+```{r}
+library(sf)
+library(sfnetworks)
+library(igraph)
+library(dplyr)
+library(units)
+
+# 1. Construimos la red temporal usando correctamente el campo maxspeed_imp con sus valores reales
+perganet_time <- perganet_blend |>
+  activate("edges") |>
+  mutate(
+    # Si hay velocidad la usa; si es NA, por defecto le asigna 40 km/h
+    speed_kmh = case_when(
+      !is.na(maxspeed_imp) ~ maxspeed_imp,
+      TRUE                 ~ 40
+    ),
+    speed = set_units(speed_kmh, "km/h"),
+    speed = set_units(speed, "m/s"),
+    
+    # Calculamos tiempo real en minutos
+    dist_m = edge_length(),
+    time_sec = dist_m / speed,
+    time_min = set_units(time_sec, "minutes"),
+    
+    # Guardamos el peso temporal limpio (sin unidades)
+    weight_time = drop_units(time_min)
+  ) |>
+  select(geometry, weight, weight_time, maxspeed_imp) |>
+  activate("nodes")
+
+# 2. Calculamos las centralidades métricas (en metros)
+perganet_metrics_mts <- perganet_blend |>
+  activate("nodes") |>
+  mutate(
+    degree           = centrality_degree(mode = "in"),
+    closeness_mts    = centrality_closeness(weights = weight, normalized = TRUE),
+    betweenness_mts  = centrality_betweenness(weights = weight, normalized = TRUE)
+  ) |>
+  activate("nodes")
+
+# 3. Calculamos las centralidades temporales (en minutos, usando weight_time)
+perganet_timetrics <- perganet_time |>
+  activate("nodes") |>
+  mutate(
+    degree           = centrality_degree(mode = "in"),
+    closeness_time   = centrality_closeness(weights = weight_time, normalized = TRUE),
+    betweenness_time = centrality_betweenness(weights = weight_time, normalized = TRUE)
+  ) |>
+  activate("edges") |>
+  mutate(
+    edge_flow        = centrality_edge_betweenness(weights = weight_time, directed = TRUE)
+  ) |>
+  activate("nodes")
+```
+
+```{r}
+tabla_centralizacion_global <- tibble(
+  Red = c("Métrica (Metros)", "Temporal (Minutos)"),
+  Centr_Grado = c(
+    igraph::centr_degree(as.igraph(perganet_metrics_mts))$centralization |> round(4),
+    igraph::centr_degree(as.igraph(perganet_timetrics))$centralization |> round(4)
+  ),
+  Centr_Intermediacion = c(
+    igraph::centr_betw(as.igraph(perganet_metrics_mts), directed = TRUE, weights = E(as.igraph(perganet_metrics_mts))$weight)$centralization |> round(4),
+    igraph::centr_betw(as.igraph(perganet_timetrics), directed = TRUE, weights = E(as.igraph(perganet_timetrics))$weight_time)$centralization |> round(4)
+  ),
+  Centr_Cercania = c(
+    igraph::centr_clo(as.igraph(perganet_metrics_mts))$centralization |> round(4),
+    igraph::centr_clo(as.igraph(perganet_timetrics))$centralization |> round(4)
+  )
+)
+
+print(tabla_centralizacion_global)
+```
+
+```{r}
+tabla_centralizacion_global <- tibble(
+  Red = c("Métrica (Metros)", "Temporal (Minutos)"),
+  Centr_Grado = c(
+    igraph::centr_degree(as.igraph(perganet_metrics_mts))$centralization |> round(4),
+    igraph::centr_degree(as.igraph(perganet_timetrics))$centralization |> round(4)
+  ),
+  Max_Intermediacion = c(
+    max(V(as.igraph(perganet_metrics_mts))$betweenness_mts, na.rm = TRUE) |> round(2),
+    max(V(as.igraph(perganet_timetrics))$betweenness_time, na.rm = TRUE) |> round(2)
+  ),
+  Max_Cercania = c(
+    max(V(as.igraph(perganet_metrics_mts))$closeness_mts, na.rm = TRUE) |> round(4),
+    max(V(as.igraph(perganet_timetrics))$closeness_time, na.rm = TRUE) |> round(4)
+  )
+)
+
+print(tabla_centralizacion_global)
+```
+
+```{r}
+
+
+resumen <- resumen |>
+  mutate(
+    centr_deg  = map(net_sel, ~igraph::centr_degree(.x)$centralization |> round(4)),
+    centr_bet  = map(net_sel, ~igraph::centr_betw(.x, directed = TRUE)$centralization |> round(4)),
+    centr_clos = map(net_sel, ~igraph::centr_clo(.x)$centralization |> round(4))
+  )
+
+```
+
+```{r}
+tabla_nodos_mts <- perganet_metrics |>
+  activate("nodes") |>
+  st_as_sf() |>
+  st_drop_geometry() |>
+  mutate(nodo = row_number()) |>
+  select(
+    nodo,
+    degree,
+    closeness_mts,
+    betweenness_mts
+  ) |>
+  arrange(desc(betweenness_mts))
+```
+
+```{r}
+library(dplyr)
+
+tabla_max_centralidad_mts <- bind_rows(
+  
+  tabla_nodos_mts |>
+    slice_max(degree, n = 1, with_ties = TRUE) |>
+    transmute(
+      Indicador = "Grado",
+      Nodo = nodo,
+      Valor = degree
+    ),
+  
+  tabla_nodos_mts |>
+    slice_max(closeness_mts, n = 1, with_ties = TRUE) |>
+    transmute(
+      Indicador = "Cercanía",
+      Nodo = nodo,
+      Valor = closeness_mts
+    ),
+  
+  tabla_nodos_mts |>
+    slice_max(betweenness_mts, n = 1, with_ties = TRUE) |>
+    transmute(
+      Indicador = "Intermediación",
+      Nodo = nodo,
+      Valor = betweenness_mts
+    )
+)
+
+tabla_max_centralidad_mts
+```
+
+```{r}
+tabla_nodos_mts |>
+  slice_max(betweenness_mts, n = 10) |>
+  select(nodo, betweenness_mts)
+```
+
+```{r}
+p1 <- map(c("degree", "closeness_mts", "betweenness_mts"),
+          function(.x) {
+            ggplot() +
+              geom_sf(
+                data = st_as_sf(perganet_metrics, "edges"),
+                color = "grey"
+              ) +
+              geom_sf(
+                data = st_as_sf(perganet_metrics, "nodes"),
+                aes(color = !!sym(.x), size = !!sym(.x)),
+                alpha = 0.3
+              ) +
+              scale_color_viridis_c(option = "inferno") +
+              labs(title = paste("Centralidad de", .x)) +
+              guides(size = "none") +
+              theme_void() +
+              theme(
+                legend.position = "bottom",
+                legend.text = element_text(angle = 45, hjust = 1)
+              )
+          }
+)
+ggarrange(plotlist = p1, nrow = 2, ncol = 2)
+
+```
+
+
+```{r}
+longitud_media <- igraph::mean_distance(
+  perganet_clean,
+  directed = TRUE,
+  weights = igraph::E(perganet_clean)$weight
+)
+```
+
+
+```{r}
+
+nodos_sf <- perganet_metrics |>
+  activate("nodes") |>
+  st_as_sf()
+
+# Área de estudio a partir de los nodos
+area_estudio <- st_as_sfc(st_bbox(nodos_sf))
+
+# Grilla hexagonal de 500 metros
+grilla_hex_geom <- st_make_grid(
+  area_estudio,
+  cellsize = 500,
+  square = FALSE
+)
+
+grilla_hex <- st_sf(
+  zona_id = seq_along(grilla_hex_geom),
+  geometry = grilla_hex_geom
+)
+
+st_crs(nodos_sf)
+st_crs(grilla_hex)
+nrow(grilla_hex)
+```
+
+
+```{r}
+ggplot() +
+  geom_sf(data = grilla_hex, fill = NA, color = "grey70") +
+  geom_sf(data = nodos_sf, color = "red", size = 0.3) +
+  labs(title = "Grilla hexagonal de 500 m sobre la red vial de Pergamino") +
+  theme_minimal()
+```
+
+```{r}
+
+nodos_grilla <- st_join(
+  nodos_sf,
+  grilla_hex["zona_id"],
+  join = st_within,
+  left = TRUE
+)
+
+nrow(nodos_sf)
+nrow(nodos_grilla)
+
+sum(is.na(nodos_grilla$zona_id))
+```
+
+
+```{r}
+sin_zona <- nodos_grilla |>
+  filter(is.na(zona_id))
+
+candidatas <- st_intersects(sin_zona, grilla_hex)
+
+table(lengths(candidatas))
+
+```
+
+```{r}
+resumen_hex <- nodos_grilla |>
+  st_drop_geometry() |>
+  group_by(zona_id) |>
+  summarise(
+    centralidad = mean(betweenness_mts, na.rm = TRUE),
+    n_nodos = n()
+  )
+
+grilla_final <- grilla_hex |>
+  left_join(resumen_hex, by = "zona_id") |>
+  mutate(
+    quintil = if_else(
+      !is.na(centralidad),
+      ntile(centralidad, 5),
+      NA_integer_
+    )
+  )
+grilla_final |>
+  st_drop_geometry() |>
+  count(quintil) |>
+  mutate(porcentaje = round(n / sum(n) * 100, 2))
+```
+
