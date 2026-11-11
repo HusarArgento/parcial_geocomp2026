@@ -12,6 +12,7 @@ library(osmdata)
 library(units)
 library(mapview)
 library(dbscan)
+library(ggpubr)
 options(scipen = 999)
 
 #Consigna A: Obtención de la red desde OSM--------------------------------------
@@ -488,24 +489,25 @@ print(cost_matrix)
 # Barrio Guemes Norte           2915.3189               0.000
 
 # Vamos por tiempo ahora
+
+# 1. Construimos la red temporal usando correctamente el campo maxspeed_imp con sus valores reales
 perganet_time <- perganet_blend |>
   activate("edges") |>
   mutate(
-    # 1. Definimos velocidad base (con tu case_when o maxspeed_imp)
     speed_kmh = case_when(
-      !is.na(maxspeed_imp) ~ maxspeed_imp,
+      !is.na(maxspeed_imp) ~ maxspeed_imp, #Si no es NA va maxspeed_imp sino 40
       TRUE                 ~ 40
-    ),
-    speed  = units::set_units(speed_kmh, "km/h"), #como el dato esta plano le etiquetamos una unidad para despues pasarla a la que necesitamos que es metros por segundo
-    speed  = units::set_units(speed, "m/s"),
+      ),
+    speed = set_units(speed_kmh, "km/h"),
+    speed = set_units(speed, "m/s"),
+    # Calculamos tiempo real en minutos
     dist_m = edge_length(),
-    time   = weight / speed,         # Resultado en segundos (m / (m/s)) porque los metros se anulan automaticamente
-    time   = units::set_units(time, "minutes"),# Lo pasamos a minutos
-    time   = units::drop_units(time),          # Quitamos unidades para igraph
-      # 4. Asignamos ese 'time' limpio al 'weight' que exige la red
-    weight = time
-  ) |>
-  select(geometry, weight, maxspeed_imp) |>
+    time_sec = dist_m / speed,
+    time_min = set_units(time_sec, "minutes"),
+    # Guardamos el peso temporal limpio (sin unidades)
+    weight_time = drop_units(time_min)
+    ) |>
+  select(geometry, weight, weight_time, maxspeed_imp) |>
   activate("nodes")
 
 # Matriz de costos temporal (5x5)
@@ -513,9 +515,8 @@ cost_matrix_time <- st_network_cost(
   perganet_time,
   from = POI,
   to = POI,
-  weights = "weight"
+  weights = "weight_time"
   )
-
 rownames(cost_matrix_time) <- POI$poi
 colnames(cost_matrix_time) <- POI$poi
 
@@ -535,3 +536,283 @@ print(cost_matrix_time)
 # Centro Civico                  0.000000            4.342451
 # Barrio Guemes Norte            4.086161            0.000000
 
+#Consigna E: Centralidad, conectividad y zonas críticas  -------------------------------------------
+
+#Centralidad de grado, cercania y betweeness en mts
+perganet_metrics <- perganet_clean |>
+  activate("nodes") |>
+  mutate(
+    degree        = centrality_degree(mode = "all"),
+    closeness_mts = centrality_closeness(weights = weight, normalized = TRUE),
+    betweenness_mts = centrality_betweenness(weights = weight, normalized = TRUE)
+  ) |>
+  activate("nodes")
+
+#Centralidad de grado, cercania y betweeness en tiempo
+
+perganet_timetrics <- perganet_clean |>
+  activate("edges") |>
+  mutate(
+    speed_kmh = case_when(
+      !is.na(maxspeed_imp) ~ maxspeed_imp,
+      TRUE ~ 40
+    ),
+    speed = set_units(speed_kmh, "km/h") |>
+      set_units("m/s"),
+    dist_m = edge_length(), #calcular longitud de cada arista en mts (5347)
+    time_sec = dist_m / speed, #tiempo en segundo porque los mts de los numeradores se cancelan
+    time_min = set_units(time_sec, "minutes"), #convertimos a minutos
+    weight_time = drop_units(time_min) #quitamos unidades porque centrality necesita numeros planos
+  ) |>
+  activate("nodes") |>
+  mutate(
+    degree           = centrality_degree(mode = "all"),
+    closeness_time   = centrality_closeness(weights = weight_time, normalized = TRUE),
+    betweenness_time = centrality_betweenness(weights = weight_time, normalized = TRUE)
+  ) |>
+  activate("edges") |>
+  mutate(
+    edge_flow = centrality_edge_betweenness(
+      weights = weight_time,
+      directed = TRUE
+    )
+  ) |>
+  activate("nodes")
+
+#Tablas de Nodos
+
+tabla_max_centralidad_mts <- bind_rows(
+  
+  tabla_nodos_mts |>
+    slice_max(degree, n = 1, with_ties = TRUE) |>
+    transmute(
+      Indicador = "Grado",
+      Nodo = nodo,
+      Valor = degree
+    ),
+  
+  tabla_nodos_mts |>
+    slice_max(closeness_mts, n = 1, with_ties = TRUE) |>
+    transmute(
+      Indicador = "Cercanía",
+      Nodo = nodo,
+      Valor = closeness_mts
+    ),
+  
+  tabla_nodos_mts |>
+    slice_max(betweenness_mts, n = 1, with_ties = TRUE) |>
+    transmute(
+      Indicador = "Intermediación",
+      Nodo = nodo,
+      Valor = betweenness_mts
+    )
+)
+
+tabla_max_centralidad_mts
+
+# Indicador          Nodo     Valor
+# 1 Grado           1943      10       
+# 2 Cercanía        1374      0.000336
+# 3 Intermediación   536      0.152  
+
+  
+tabla_nodos_mts |>
+  slice_max(betweenness_mts, n = 10) |>
+  select(nodo, betweenness_mts)
+
+
+# nodo          intermediacion en mts
+# <int>           <dbl>
+#   1   536         0.152
+# 2  4224           0.139
+# 3  2828           0.138
+# 4   808           0.131
+# 5    45           0.129
+# 6   171           0.128
+# 7    40           0.127
+# 8  4022           0.126
+# 9  3658           0.126
+# 10  2225           0.126
+
+### Grafico: Intermediacion de Nodos
+p1 <- map(c("degree", "closeness_mts", "betweenness_mts"),
+          function(.x) {
+            ggplot() +
+              geom_sf(
+                data = st_as_sf(perganet_metrics, "edges"),
+                color = "grey"
+              ) +
+              geom_sf(
+                data = st_as_sf(perganet_metrics, "nodes"),
+                aes(color = !!sym(.x), size = !!sym(.x)),
+                alpha = 0.3
+              ) +
+              scale_color_viridis_c(option = "inferno") +
+              labs(title = paste("Centralidad de", .x)) +
+              guides(size = "none") +
+              theme_void() +
+              theme(
+                legend.position = "bottom",
+                legend.text = element_text(angle = 45, hjust = 1)
+              )
+          }
+)
+ggarrange(plotlist = p1, nrow = 2, ncol = 2)
+
+###Intermediacion de Aristas
+p1[[length(p1) + 1]] <- ggplot() +
+  geom_sf(
+    data = st_as_sf(perganet_timetrics, "nodes"),
+    color = "grey"
+  ) +
+  geom_sf(
+    data = st_as_sf(perganet_timetrics, "edges"),
+    aes(color = edge_flow, linewidth = edge_flow),
+    alpha = 0.5
+  ) +
+  scale_color_viridis_c(option = "inferno") +
+  labs(
+    title = "Intermediación de los ejes viales",
+    color = "Intermediación"
+  ) +
+  guides(linewidth = "none") +
+  theme_void() +
+  theme(
+    legend.position = "bottom",
+    legend.text = element_text(angle = 45, hjust = 1)
+  )
+
+ggarrange(plotlist = p1, nrow = 2, ncol = 2)
+
+# Tenemos el nodo 536 con un valor del 15,2%  de intermediacion, lo cual considerable
+# pero si vemos las 10 que le siguen, observaremos que los valores son bastante 
+# por lo tanto no hay una concentracion de la intermediacion sino que se encuentra
+#distribuida entre varios puntos relevantes.Al ver los mapas, se refleja algo más:
+# Se observa un corredor diagonal hacia el este/noreste que puede estar teniendo
+# una función integradora, la intermediación es tanto de nodos como en la de arista,
+# que puede estar introduciendo una función de articulación territorial entre 
+# sectores urbanos separados por una barrera física, es decir arroyo. Los nodos 
+# y segmentos participan en numerosos caminos mínimos entre sectores de ambas márgenes.
+# En cuanto a la cercanía, los valores más elevados se dan  entorno al área central (
+#nucleo urbano) disminuyendo  hacia las periferias. Es decir que desde el núcleo urbano  
+#tiene un nivel de conectividad  más favorable para alcanzar el resto de los nodos 
+#mediante recorridos de menor distancia.
+
+#Tablas globales
+tabla_centralizacion_global <- tibble(
+  Red = c("Métrica (Metros)", "Temporal (Minutos)"),
+  Centr_Grado = c(
+    igraph::centr_degree(as.igraph(perganet_metrics_mts))$centralization |> round(4),
+    igraph::centr_degree(as.igraph(perganet_timetrics))$centralization |> round(4)
+  ),
+  Max_Intermediacion = c(
+    max(V(as.igraph(perganet_metrics_mts))$betweenness_mts, na.rm = TRUE) |> round(2),
+    max(V(as.igraph(perganet_timetrics))$betweenness_time, na.rm = TRUE) |> round(2)
+  ),
+  Max_Cercania = c(
+    max(V(as.igraph(perganet_metrics_mts))$closeness_mts, na.rm = TRUE) |> round(4),
+    max(V(as.igraph(perganet_timetrics))$closeness_time, na.rm = TRUE) |> round(4)
+  )
+)
+
+print(tabla_centralizacion_global)
+
+# Red                     Centr_Grado     Max_Intermediacion   Max_Cercania
+# <chr>                    <dbl>                 <dbl>           <dbl>
+#   1 Métrica (Metros)      0.0006               0.15            0.0003
+# 2 Temporal (Minutos)      0.0006               0.29           0.276 
+
+# La tabla original calcula la centralización global "estándar" (topológica pura) porque no 
+# está pesando por velocidad real en esas líneas; nosotros tuvimos que usar el 
+# máximo porque estamos evaluando una red ponderada real donde las funciones globales 
+# nativas de igraph se ponen quisquillosas.
+
+longitud_media <- igraph::mean_distance(
+  perganet_clean,
+  directed = TRUE,
+  weights = igraph::E(perganet_clean)$weight
+)
+round(longitud_media, 2)
+
+#Longitud media del camino mínimo: 4165.52 metros
+
+### La GRILLA
+nodos_sf <- perganet_metrics |>
+  activate("nodes") |>
+  st_as_sf()
+
+# Área de estudio a partir de los nodos
+area_estudio <- st_as_sfc(st_bbox(nodos_sf))
+
+# Grilla hexagonal de 500 metros
+grilla_hex_geom <- st_make_grid(
+  area_estudio,
+  cellsize = 500,
+  square = FALSE
+)
+
+grilla_hex <- st_sf(
+  zona_id = seq_along(grilla_hex_geom),
+  geometry = grilla_hex_geom
+)
+
+#Grafico
+ggplot() +
+  geom_sf(data = grilla_hex, fill = NA, color = "grey70") +
+  geom_sf(data = nodos_sf, color = "red", size = 0.3) +
+  labs(title = "Grilla hexagonal de 500 m sobre la red vial de Pergamino") +
+  theme_minimal()
+
+resumen_hex <- nodos_grilla |>
+  st_drop_geometry() |>
+  group_by(zona_id) |>
+  summarise(
+    centralidad = mean(betweenness_mts, na.rm = TRUE),
+    n_nodos = n()
+  )
+
+grilla_final <- grilla_hex |>
+  left_join(resumen_hex, by = "zona_id") |>
+  mutate(
+    quintil = if_else(
+      !is.na(centralidad),
+      ntile(centralidad, 5),
+      NA_integer_
+    )
+  )
+grilla_final |>
+  st_drop_geometry() |>
+  count(quintil) |>
+  mutate(porcentaje = round(n / sum(n) * 100, 2))
+
+# quintil   n porcentaje
+# 1       1  39       9.75
+# 2       2  38       9.50
+# 3       3  38       9.50
+# 4       4  38       9.50
+# 5       5  38       9.50
+# 6      NA 209      52.25
+
+grilla_final |>
+  st_drop_geometry() |>
+  filter(!is.na(quintil)) |>
+  group_by(quintil) |>
+  summarise(
+    minimo = min(centralidad),
+    maximo = max(centralidad),
+    media = mean(centralidad)
+  )
+
+# quintil   minimo    maximo    media
+# 1         0         0.00187   0.000632
+# 2         0.00191   0.00607   0.00397 
+# 3         0.00630   0.0121    0.00880 
+# 4         0.0121    0.0211    0.0157  
+# 5         0.0215    0.0657    0.0349 
+
+# Observando los  quintiles se identifica  una distribución heterogénea de la importancia
+# en materia de conectividad de los nodos. Las zonas correspondientes al 
+# quintil superior presentan valores  de intermediación aproximadamente 55 veces 
+# mayores que las del quintil inferior. Esto señala la existencia de sectores 
+# donde una mayor proporción de los caminos mínimos entre pares de nodos atraviesa 
+# determinadas intersecciones. 
