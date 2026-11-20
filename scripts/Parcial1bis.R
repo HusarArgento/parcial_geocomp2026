@@ -751,8 +751,10 @@ nodos_sf <- perganet_metrics |>
 area_estudio <- st_as_sfc(st_bbox(nodos_sf))
 
 =======
+
 # Grilla hexagonal de 500 metros que cubre al area de estudio, 
 >>>>>>> 2af611556fcdde95222edc12e47b72967b728def
+
 grilla_hex_geom <- st_make_grid(
   area_estudio,
   cellsize = 500,
