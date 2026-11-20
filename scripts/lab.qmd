@@ -963,3 +963,7 @@ grilla_final |>
   mutate(porcentaje = round(n / sum(n) * 100, 2))
 ```
 
+```{r}
+
+```
+

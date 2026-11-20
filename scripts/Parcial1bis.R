@@ -103,9 +103,9 @@ st_geometry(calles_linered) <- st_geometry(calles_linered) |>
   st_sfc(crs = st_crs(calles_linered))
 
 #calles_linered <- st_snap_to_grid(calles_line, size = 1)
-#No funciona
+#No funciona, me dice que no está disponible para esta version de R, la ultima 4.6.2
 
-table(calles_linered$highway, DOBLE_MANO = calles_linered$oneway, exclude = NULL)
+table(calles_linered$highway, DOBLE_MANO = calles_linered$oneway, exclude = NULL) #vemos al inerior
 
 ## Imputamos a doble mano todas las calles que no están clasificadas
 calles_linered <- calles_linered |>
@@ -240,7 +240,7 @@ lineint %>%
 #7           0-1 m   20
 
 table(lineint$intervalos)
-#+ 50 m           0-1 m 0 m o inválidos           1-5 m         10-20 m         20-50 m          5-10 m 
+#+ 50 m           0-1 m    0 m o inválidos           1-5 m         10-20 m         20-50 m          5-10 m 
 # 3982              20              34              50             209             478              99 
 
 calles_clean <- lineint |> 
@@ -257,7 +257,7 @@ calles_clean <- lineint |>
 perga_net <- as_sfnetwork(lineint, directed = TRUE)
 
 ##Limpieza_ 
-# Subdividir (2) -> Simplificar (1) -> Simplificar intersectiones (4) -> Suavizado de pseudo nodes (3)
+# Subdividir (2) -> Simplificar (1) -> Simplificar intersectiones (4) -> Suavizar de pseudo nodes (3)
 # 1. Subdividir: Corta las líneas en cada intersección geométrica (cuando se 
 #cruzan ) Necesitamos que cada tramo entre intersecciones sea una arista independiente 
 #antes de empezar a fusionar o simplificar nodos..
@@ -313,9 +313,12 @@ components(perga_net2)$csize
 #Luego  de procesar topologicamente la red,  (perga_net2),  el número de componentes bajo a 32 ($no[1] 32), 
 #eliminando 359 falsas rupturas 
 
-#Por otro lado, el tamaño de las componentes ($csize) nos muestra  que la estructura se concentra masivamente en una componente principal de 4392$ elementos, 
-#mientras que los $31 fragmentos restantes pertenecen a componentes secundarias o islotes de conectividad perifericos. 
-#Para proceder con los análisis de ruteo y accesibilidad, conservaremos solo  la componente principal, descartando las redes secundarias por tratarse de artefactos 
+#Por otro lado, el tamaño de las componentes ($csize) nos muestra  que la estructura 
+#se concentra masivamente en una componente principal de 4392$ elementos, 
+#mientras que los $31 fragmentos restantes pertenecen a componentes secundarias 
+#o islotes de conectividad perifericos. 
+#Para proceder con los análisis de ruteo y accesibilidad, conservaremos solo  la 
+#componente principal, descartando las redes secundarias por tratarse de artefactos 
 #de digitalización inconclusos.
 
 # Visualizamos componetes: Extraemos los nodos de la red y lo convertimos en un objeto espacial, 
@@ -351,7 +354,7 @@ perganet_clean <- perga_net2 |>
   activate("edges") |>
   mutate(weight = edge_length())        
 
-## Agregamos informacion de componentes a los nodos 
+## Agregamos informacion de componentes a los nodos, a que componente pertenecen 
 perganet_clean <- perganet_clean |>
   activate("nodes") |>
   mutate(comp = group_components())
@@ -373,26 +376,20 @@ resumen_perga <- tibble(
     activate("edges") |> 
     as_tibble() |> 
     mutate(len = st_length(geometry)) |> 
- 
-        # 1. Extrae los datos de la tabla y los convierte en un vector plano de R
+         # 1. Extrae los datos de la tabla y los convierte en un vector plano de R
     pull(len) |> 
-    
-    # 2. Acumula todos los tramos individuales en un único valor total (mantiene la clase de unidad)
+     # 2. Acumula todos los tramos individuales en un único valor total (mantiene la clase de unidad)
     sum(na.rm = TRUE) |> 
-    
-    # 3. Asegura y fija explícitamente la unidad base del acumulado como metros
+     # 3. Asegura y fija explícitamente la unidad base del acumulado como metros
     units::set_units("m") |> 
-    
-    # 4. Realiza la conversión matemática automática de metros a kilómetros
+     # 4. Realiza la conversión matemática automática de metros a kilómetros
     units::set_units("km") |> 
-    
-    # 5. Despoja la etiqueta de unidad para dejar un número plano apto para el tibble y round()
+     # 5. Despoja la etiqueta de unidad para dejar un número plano apto para el tibble y round()
     as.numeric() |> 
     round(2),
-  
   grado_medio = mean(igraph::degree(perganet_clean)) |> round(2),
   densidad = igraph::edge_density(perganet_clean) |> round(6)
-)
+  )
 
 #Red                               Nodos  Ejes  Longitud   GradoM  Denisdad
 #Pergamino (Componente Principal)	 4392	 10695	795.14	    4.87	0.00055
@@ -536,6 +533,16 @@ print(cost_matrix_time)
 # Centro Civico                  0.000000            4.342451
 # Barrio Guemes Norte            4.086161            0.000000
 
+
+# Los datos muestran la asimetría de la red: de Parque San Martín a  Hospital San José: 1.731m (2,37min), pero de
+# Hospital San José  Parque San Martín: 2.247m (3,08min), por posibles desvios y diseño de la urbe. En el recorrido que va
+# de Barrio Güemes Norte  a Parque San Martín (4.295m en 5,37min), la presencia de avenidas  (60km/h) que ofician como vasos comunicantes
+# para la conectividad. Especialmente a tener importancia en el caso de una barrera fisica como es el rio, que produce puntos
+# de estrangulamiento en los puentes. Las avenidas integradoras mas cercanas a las margenes pueden estar aliviando esto y
+# mitigando la fragmentacion territorial.
+
+
+
 #Consigna E: Centralidad, conectividad y zonas críticas  -------------------------------------------
 
 #Centralidad de grado, cercania y betweeness en mts
@@ -572,14 +579,14 @@ perganet_timetrics <- perganet_clean |>
   ) |>
   activate("edges") |>
   mutate(
-    edge_flow = centrality_edge_betweenness(
+    edge_flow = centrality_edge_betweenness( #Intermediacion de aristas:caminos mínimos entre pares de nodos pasan por cada segmento de la red vial
       weights = weight_time,
       directed = TRUE
     )
   ) |>
   activate("nodes")
 
-#Tablas de Nodos
+#Tablas de Nodos (Con un map seria computacionalmente mas eficiente)
 
 tabla_max_centralidad_mts <- bind_rows(
   
@@ -622,8 +629,8 @@ tabla_nodos_mts |>
 
 
 # nodo          intermediacion en mts
-# <int>           <dbl>
-#   1   536         0.152
+ 
+# 1   536           0.152
 # 2  4224           0.139
 # 3  2828           0.138
 # 4   808           0.131
@@ -659,7 +666,7 @@ p1 <- map(c("degree", "closeness_mts", "betweenness_mts"),
 )
 ggarrange(plotlist = p1, nrow = 2, ncol = 2)
 
-###Intermediacion de Aristas
+###Intermediacion de Nodos y Aristas
 p1[[length(p1) + 1]] <- ggplot() +
   geom_sf(
     data = st_as_sf(perganet_timetrics, "nodes"),
@@ -741,10 +748,8 @@ nodos_sf <- perganet_metrics |>
   activate("nodes") |>
   st_as_sf()
 
-# Área de estudio a partir de los nodos
 area_estudio <- st_as_sfc(st_bbox(nodos_sf))
 
-# Grilla hexagonal de 500 metros
 grilla_hex_geom <- st_make_grid(
   area_estudio,
   cellsize = 500,
@@ -752,8 +757,8 @@ grilla_hex_geom <- st_make_grid(
 )
 
 grilla_hex <- st_sf(
-  zona_id = seq_along(grilla_hex_geom),
-  geometry = grilla_hex_geom
+  zona_id = seq_along(grilla_hex_geom), #ID  para cada hexágono.
+  geometry = grilla_hex_geom   #Geometrías
 )
 
 #Grafico
@@ -768,7 +773,7 @@ resumen_hex <- nodos_grilla |>
   group_by(zona_id) |>
   summarise(
     centralidad = mean(betweenness_mts, na.rm = TRUE),
-    n_nodos = n()
+    n_nodos = n() #caclcular centralidad por hexagono 
   )
 
 grilla_final <- grilla_hex |>
@@ -816,3 +821,21 @@ grilla_final |>
 # mayores que las del quintil inferior. Esto señala la existencia de sectores 
 # donde una mayor proporción de los caminos mínimos entre pares de nodos atraviesa 
 # determinadas intersecciones. 
+
+
+
+
+#Consigna F: Autocorrelacion espacial  ----------------------------------------
+
+##cargamos mapa radiocensales
+perga_mapa <- read_csv("data/raw/indipergamino.csv")
+
+
+perga_radio <- perga_mapa |>
+  select(
+    codigo_radio = `Código de radio`,
+    WKT = `Geometría en WKT`
+  ) |>
+  st_as_sf(wkt = "WKT", crs = 5347)
+
+plot(perga_radio)
