@@ -741,7 +741,8 @@ longitud_media <- igraph::mean_distance(
 )
 round(longitud_media, 2)
 
-#Longitud media del camino mínimo: 4165.52 metros
+# #Longitud media del camino mínimo: 4165.52 metros, una distancia media de los 
+# caminos minimos de 4,17 kms
 
 ### La GRILLA
 nodos_sf <- perganet_metrics |>
@@ -750,10 +751,9 @@ nodos_sf <- perganet_metrics |>
 
 area_estudio <- st_as_sfc(st_bbox(nodos_sf))
 
-=======
+
 
 # Grilla hexagonal de 500 metros que cubre al area de estudio, 
->>>>>>> 2af611556fcdde95222edc12e47b72967b728def
 
 grilla_hex_geom <- st_make_grid(
   area_estudio,

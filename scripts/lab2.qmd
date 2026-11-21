@@ -1,0 +1,121 @@
+---
+title: "lab2dop"
+format: html
+editor: visual
+---
+
+## Quarto
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+## Running Code
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{r}
+1 + 1
+```
+
+You can add options to executable code like this
+
+```{r}
+#| echo: false
+2 * 2
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
+
+```{r}
+#Medidas Globales de Centralidad
+#Densidad
+igraph::edge_density(perganet_clean)
+
+#
+
+```
+
+Vamos a hacer una primera aproximación a la estructura de la red, el 0,0555 % es indicativo de que en realidad existe una densidad o proporcion muy pequeña, respecto de las conexiones posibles, siempre teniendo en cuenta que por sí solo el indicador no permite determinar grado de conectividad o vulnerabilidad ante interrupciones de infraestructura.
+
+```{r}
+perganet_clean |>
+  activate("edges") |>
+  st_drop_geometry() |>
+  names()
+
+
+perganet_clean |>
+  activate("edges") |>
+  st_as_sf()
+```
+
+```{r}
+perganet_clean <- perganet_clean |>
+  activate("edges") |>
+  mutate(longitud_arista = as.numeric(st_length(geometry)))
+
+igraph::mean_distance(
+  perganet_clean,
+  directed = TRUE,
+  weights = igraph::E(perganet_clean)$longitud_arista
+)
+```
+
+```{r}
+longitud_media <- igraph::mean_distance(
+  perganet_clean,
+  directed = TRUE,
+  weights = igraph::E(perganet_clean)$weight
+)
+round(longitud_media, 2)
+
+# #Longitud media del camino mínimo: 4165.52 metros, una distancia media de los 
+# caminos minimos de 4,17 kms
+```
+
+```{r}
+eficiencia_global <- igraph::global_efficiency(
+  perganet_clean,
+  weights = igraph::E(perganet_clean)$weight,
+  directed = TRUE
+)
+
+eficiencia_global
+0.0003984361
+
+```
+
+```{text}
+Identificar los puentes: localizar los cruces sobre el arroyo Pergamino.
+
+
+
+Vincularlos con la red vial: determinar qué nodos y aristas representan cada cruce.
+
+
+
+Evaluar su importancia estructural: calcular centralidades y observar qué conexiones funcionan como puntos críticos.
+
+
+
+Simular interrupciones: retirar temporalmente las conexiones afectadas y medir cómo cambia la red.
+```
+
+```{r}
+perganet_clean |>
+  activate("edges") |>
+  st_as_sf() |>
+  st_drop_geometry() |>
+  names()
+```
+
+```{r}
+perganet_clean |>
+  activate("edges") |>
+  st_as_sf() |>
+  st_drop_geometry() |>
+  filter(
+    grepl("bridge", other_tags, ignore.case = TRUE)
+  ) |>
+  select(osm_id, name, highway, other_tags) |>
+  distinct()
+```
