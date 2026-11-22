@@ -119,3 +119,170 @@ perganet_clean |>
   select(osm_id, name, highway, other_tags) |>
   distinct()
 ```
+
+```{r}
+calles_osm |>
+  filter(grepl('"bridge"=>', other_tags)) |>
+  select(osm_id, name, highway, other_tags)
+```
+
+1.  
+
+```{r}
+
+```
+
+Puentes:
+
+| Puente      | Tipo        | Vía / infraestructura           |
+|-------------|-------------|---------------------------------|
+| Paraná      | Vial        | Paraná → Boulevard Sánchez      |
+| Colón       | Vial        | Illia → Boulevard Colón         |
+| Merced      | Vial        | Juan B. Justo                   |
+| Rocha       | Vial        | Perón → Boulevard Rocha         |
+| Buccar      | Vial        | Balbín → Avenida Aquileo Buccar |
+| FC Belgrano | Ferroviario | Ferrocarril General Belgrano    |
+
+```{r}
+calles_osm |>
+  filter(grepl('"bridge"=>', other_tags)) |>
+  select(osm_id, name, highway, other_tags)
+```
+
+```{r}
+calles_osm |>
+  filter(grepl("Puente", name, ignore.case = TRUE)) |>
+  select(osm_id, name, highway, other_tags)
+```
+
+```{r}
+calles_osm |>
+  filter(grepl('"bridge"=>"', other_tags)) |>
+  count(highway, sort = TRUE)
+```
+
+El objetivo entonces es detectar los cruces estratégicos de la red vial sobre el arroyo Pergamino principal.
+
+Los cinco puentes vehiculares permiten formular una pregunta concreta:
+
+¿Qué sucede con la conectividad de la red vial de Pergamino si se interrumpen los principales cruces del arroyo que atraviesa la ciudad?
+
+Esto permite construir escenarios comparables y estudiar cambios en:
+
+- Eficiencia global.
+
+- Distancia media.
+
+- Centralidad de nodos y aristas.
+
+- Conectividad entre sectores urbanos.
+
+El puente ferroviario queda registrado como infraestructura complementaria, pero fuera de la red vial modelada.
+
+Tres criterios:
+
+1.  **Hidrológico:** cruza el cauce principal del arroyo Pergamino.
+
+2.  **Territorial:** está dentro del sector urbano que delimitamos para el estudio.
+
+3.  **Funcional:** permite la circulación vehicular y conecta sectores de la red vial.
+
+```         
+    osm_id                     name                 highway 
+168389605                 Puente Colón              secondary 
+176522119                 Puente Merced             secondary 
+176522126                 Puente del Bicentenario   residential 
+397381945                 Puente Florencio Sánchez  secondary 
+742361054                 Puente Bucar              trunk 
+988977583                 Puente Bucar              trunk 
+988977584                 Puente Rocha              secondary
+176522108                 Puente Rocha              secondary 
+```
+
+```{r}
+ids_puentes <- c(
+  168389605, 176522119, 176522126, 397381945,
+  742361054, 988977583, 988977584, 176522108
+)
+
+perganet_clean |>
+  activate("edges") |>
+  filter(osm_id %in% ids_puentes) |>
+  select(osm_id, name, highway, from, to, weight)
+```
+
+| Puente            | `osm_id`  | Aristas dirigidas |
+|-------------------|-----------|-------------------|
+| Colón             | 168389605 | 2                 |
+| Merced            | 176522119 | 2                 |
+| Bicentenario      | 176522126 | 4                 |
+| Florencio Sánchez | 397381945 | 2                 |
+| Bucar             | 742361054 | 2                 |
+| Bucar             | 988977583 | 2                 |
+| Rocha             | 176522108 | 2                 |
+| Rocha             | 988977584 | 2                 |
+
+Tenemos **18 aristas dirigidas**, correspondientes a ocho objetos OSM.
+
+### **¿Por qué algunas tienen cuatro aristas?**
+
+Mirá el Puente del Bicentenario:
+
+- 2223 → 2224: 10,34 m
+
+- 2224 → 2223: 10,34 m
+
+- 2222 → 2223: 82,35 m
+
+- 2223 → 2222: 82,35 m
+
+Esto indica que el objeto OSM original fue dividido en dos segmentos dentro de la red, y cada segmento tiene su correspondiente dirección inversa.
+
+Por lo tanto, tenemos dos segmentos físicos y cuatro aristas dirigidas.
+
+### **3. Una cuestión que debemos resolver**
+
+Hay una diferencia entre:
+
+- **Objeto OSM:** identificador de la vía original.
+
+- **Segmento físico:** tramo de geometría que quedó entre dos nodos.
+
+- **Arista dirigida:** conexión entre dos nodos en un sentido determinado.
+
+| Puente            | osm_id            | Segmentos físicos\* | Aristas dirigidas |
+|-------------------|-------------------|---------------------|-------------------|
+| Colón             | 168389605         | 1                   | 2                 |
+| Rocha             | 176522108         | 1                   | 2                 |
+| Merced            | 176522119         | 1                   | 2                 |
+| Bicentenario      | 176522126         | 2                   | 4                 |
+| Florencio Sánchez | 397381945         | 1                   | 2                 |
+| Bucar             | 742361054         | 1                   | 2                 |
+| Bucar             | 988977583         | 1                   | 2                 |
+| Rocha             | 988977584         | 1                   | 2                 |
+| **Total**         | **8 objetos OSM** | **9**               | **18**            |
+
+```{r}
+degree <- perganet_clean |>
+  activate("nodes") |>
+  centrality_degree(mode = "all")
+```
+
+```{r centralidad gradol}
+cent_grado <- igraph::degree(
+  perganet_clean,
+  mode = "all"
+)
+
+length(cent_grado)
+summary(cent_grado)
+
+
+```
+
+```{r }
+
+nodos_criticos <- nodos_degree |>
+  filter(cent_grado %in% c(9, 10))
+mapview(nodos_criticos, zcol = "cent_grado")
+```

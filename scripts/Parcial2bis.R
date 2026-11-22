@@ -545,7 +545,19 @@ print(cost_matrix_time)
 
 #Consigna E: Centralidad, conectividad y zonas críticas  -------------------------------------------
 
-#Centralidad de grado, cercania y betweeness en mts
+#Centralidad de grado
+cent_grado <- igraph::degree(
+  perganet_clean,
+  mode = "all"
+)
+
+length(cent_grado)
+summary(cent_grado)
+
+
+
+
+ 
 perganet_metrics <- perganet_clean |>
   activate("nodes") |>
   mutate(

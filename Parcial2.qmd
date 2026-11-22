@@ -1,176 +1,67 @@
 ---
-title: "Parcial2Informe"
+title: "Notas utiles para aprender"
 format: html
 editor: visual
 ---
 
-#### *Centralidad de Grado*
-
-```{r Centralidad de Grado}
-cent_grado <- igraph::degree(
-  perganet_clean,
-  mode = "all"
-)
-
-summary(cent_grado)
+```{r}
+calles_osm |>
+  filter(grepl('"bridge"=>', other_tags)) |>
+  select(osm_id, name, highway, other_tags)
 ```
 
-Si bien la media es de casi 5 conexiones por nodo, al compararla con la mediana de 4 conexiones advertimos el sesgo que influye por los nodos mas conectados. Si le sumamos a esto el tercer cuartil, vemos que la mayoria de los nodos tienen entre 4 y 6 conexiones, lo cual nos habla de cierta uniformidad. Aun asi, cabe destacar que existen ciertos nodos con unas 8 conexiones en las zonas centricas.
+1.  `calles_osm`: parte del objeto original.
+
+2.  `filter()`: conserva únicamente las filas que cumplen una condición.
+
+3.  `grepl('"bridge"=>', other_tags)`: busca el patrón de texto `"bridge"=>` dentro de cada celda de `other_tags`.
+
+4.  `select()`: muestra solamente las cuatro columnas indicadas.
+
+**Dos funciones que conviene recordar:**
+
+- `grepl()`: devuelve `TRUE` o `FALSE` según encuentre o no el patrón.
+
+- `select()`: selecciona columnas, no filtra registros.
+
+Por ejemplo, si quisieras buscar cualquier aparición de la palabra `bridge`, sin importar qué venga después:
 
 ```{r}
-table(cent_grado)
+filter(grepl("bridge", other_tags))
 ```
+
+Y si quisieras buscar `bridge` en otra columna, cambiarías el segundo argumento de `grepl()`.
+
+**Una distinción conceptual:** `grepl()` trabaja sobre cadenas de caracteres. No sabe qué significa `bridge`; simplemente busca una coincidencia textual. Es una herramienta muy útil para explorar atributos OSM almacenados en `other_tags`.
 
 ```{r}
-nodos_degree <- perganet_clean |>
-  activate("nodes") |>
-  st_as_sf() |>
-  mutate(cent_grado = cent_grado)
-
-
-mapview(
-  nodos_degree,
-  zcol = "cent_grado"
-)
+calles_osm |>
+  filter(grepl('"bridge"=>', other_tags)) |>
+  select(osm_id, name, highway, other_tags)
 ```
+
+Acá `bridge` no es parte de un nombre: es una **clave que identifica el atributo** y `yes` es su valor.
+
+La diferencia fundamental:
+
+- `name`: buscamos un contenido (el nombre Puente).
+
+- `other_tags`: buscamos una etiqueta (la clave bridge).
+
+Si quisiéramos buscar cualquier aparición de `bridge` en `other_tags`, también podríamos usar `grepl("bridge", other_tags)`, pero sería menos preciso: podría encontrar coincidencias dentro de otros valores.
+
+Es la diferencia entre buscar una palabra y buscar un campo específico dentro de una estructura de datos.
 
 ```{r}
-library(ggplot2)
-
-ggplot(
-  data.frame(cent_grado = cent_grado),
-  aes(x = cent_grado)
-) +
-  geom_histogram(
-    binwidth = 1,
-    boundary = 0.5,
-    color = "black",
-    fill = "steelblue"
-  ) +
-  labs(
-    title = "Distribución de la centralidad de grado",
-    subtitle = "Red vial de Pergamino",
-    x = "Grado del nodo",
-    y = "Cantidad de nodos"
-  ) +
-  scale_x_continuous(breaks = seq(1, 10, 1)) +
-  theme_minimal()
+calles_osm |>
+  filter(grepl("Puente", name, ignore.case = TRUE)) |>
+  select(osm_id, name, highway, other_tags)
 ```
 
-```{r}
-nodos_criticos <- nodos_degree |>
-  filter(cent_grado %in% c(9, 10))
-mapview(nodos_criticos, zcol = "cent_grado")
-```
+- `grepl("Puente", name)`: busca el texto en cada registro de `name`.
 
-Por otro lado, encontramos un nodo con 9 conexiones perteneciente al punto de confluencia de las Rutas 188, junto con la avenida de entrada Juan Domingo Peron. y 10 conexiones en la zona de loteos y quintas, proximas a las avenidas de entrada y las rutas.
+- `ignore.case = TRUE`: no distingue mayúsculas de minúsculas.
 
-#### *Centralidad de Cercanía*
+- `filter()`: conserva las coincidencias.
 
-```{r Centralidad de Cercanía}
-cent_cerca <- igraph::closeness(
-  perganet_clean,
-  mode = "all",
-  weights = igraph::E(perganet_clean)$weights,
-  normalized = TRUE
-)
-summary(cent_cerca)
-
-```
-
-```{r}
-dist_mediall <- 1 / cent_cerca
-summary(dist_mediall)
-```
-
-```{r}
-cent_cerca2 <- igraph::closeness(
-  perganet_clean,
-  mode = "in",
-  weights = igraph::E(perganet_clean)$weights,
-  normalized = TRUE
-)
-
-summary(cent_cerca2)
-
-```
-
-```{r}
-dist_mediain <- 1 / cent_cerca2
-summary(dist_mediain)
-```
-
-```{r}
-cent_cerca3 <- igraph::closeness(
-  perganet_clean,
-  mode = "out",
-  weights = igraph::E(perganet_clean)$weights,
-  normalized = TRUE
-)
-summary(cent_cerca3)
-
-```
-
-```{r}
-dist_mediaout <- 1 / cent_cerca3
-summary(dist_mediaout)
-```
-
-```{r}
-resumen_in <- summary(dist_mediain)
-resumen_out <- summary(dist_mediaout)
-
-tabla_closeness <- rbind(
-  IN = resumen_in,
-  OUT = resumen_out
-)
-
-```
-
-```{r}
-tabla_closeness
-
-```
-
-```{r}
-hist(
-  dist_mediain,
-  breaks = 30,
-  main = "Distribución de centralidad de cercanía",
-  xlab = "Centralidad de cercanía",
-  ylab = "Cantidad de nodos",
-  col = "steelblue"
-)
-```
-
-```{r}
-hist(
-  dist_mediaout,
-  breaks = 30,
-  main = "Distribución de centralidad de cercanía",
-  xlab = "Centralidad de cercanía",
-  ylab = "Cantidad de nodos",
-  col = "steelblue"
-)
-```
-
-```{r}
-hist(
-  dist_mediall,
-  breaks = 30,
-  main = "Distribución de centralidad de cercanía",
-  xlab = "Centralidad de cercanía",
-  ylab = "Cantidad de nodos",
-  col = "steelblue"
-)
-```
-
-En términos generales, la red presenta una accesibilidad direccional bastante simétrica: las distancias medias de llegada y salida son muy similares, pero con una gran diferencia en los extremos, puesto que el mínimo de llegadas es apenas de 23,77 m, mientras que el mínimo de `salida`es 2.980 m.
-
-**La mediana** está alrededor **3.950 metros,** tanto en la llegada como la salida, de distancia promedio al resto La red , en promedio, esta **equilibrada en accesibilidad** en ambos sentidos.**El máximo \~8.810 m** coincide casi exactamente en IN y OUT. Probablemente sea el **mismo nodo** (o un par de nodos simétricos) en el borde de la red, mal conectado en ambos sentidos.
-
-####  *Centralidad de Intermediación - PRIMAL*
-
-```{r}
-
-```
+- `select()`: muestra las columnas que te interesan.
