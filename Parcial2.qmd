@@ -1,67 +1,968 @@
 ---
-title: "Notas utiles para aprender"
+title: "Parcial2Informe"
 format: html
 editor: visual
 ---
 
-```{r}
-calles_osm |>
-  filter(grepl('"bridge"=>', other_tags)) |>
-  select(osm_id, name, highway, other_tags)
-```
-
-1.  `calles_osm`: parte del objeto original.
-
-2.  `filter()`: conserva únicamente las filas que cumplen una condición.
-
-3.  `grepl('"bridge"=>', other_tags)`: busca el patrón de texto `"bridge"=>` dentro de cada celda de `other_tags`.
-
-4.  `select()`: muestra solamente las cuatro columnas indicadas.
-
-**Dos funciones que conviene recordar:**
-
-- `grepl()`: devuelve `TRUE` o `FALSE` según encuentre o no el patrón.
-
-- `select()`: selecciona columnas, no filtra registros.
-
-Por ejemplo, si quisieras buscar cualquier aparición de la palabra `bridge`, sin importar qué venga después:
+#### *Librerias*
 
 ```{r}
-filter(grepl("bridge", other_tags))
+library(tidyverse)
+library(sf)
+library(geos)
+library(dbscan)
+library(leaflet)
+library(igraph)
+library(tidygraph)
+library(sfnetworks)
+library(osmdata)
+library(units)
+library(mapview)
+library(dbscan)
+library(ggpubr)
+options(scipen = 999)
 ```
 
-Y si quisieras buscar `bridge` en otra columna, cambiarías el segundo argumento de `grepl()`.
+#### *Centralidad de Grado*
 
-**Una distinción conceptual:** `grepl()` trabaja sobre cadenas de caracteres. No sabe qué significa `bridge`; simplemente busca una coincidencia textual. Es una herramienta muy útil para explorar atributos OSM almacenados en `other_tags`.
+```{r Centralidad de Grado}
+cent_grado <- igraph::degree(
+  perganet_clean,
+  mode = "all"
+)
+
+summary(cent_grado)
+```
+
+Si bien la media es de casi 5 conexiones por nodo, al compararla con la mediana de 4 conexiones advertimos el sesgo que influye por los nodos mas conectados. Si le sumamos a esto el tercer cuartil, vemos que la mayoria de los nodos tienen entre 4 y 6 conexiones, lo cual nos habla de cierta uniformidad. Aun asi, cabe destacar que existen ciertos nodos con unas 8 conexiones en las zonas centricas.
 
 ```{r}
-calles_osm |>
-  filter(grepl('"bridge"=>', other_tags)) |>
-  select(osm_id, name, highway, other_tags)
+table(cent_grado)
 ```
-
-Acá `bridge` no es parte de un nombre: es una **clave que identifica el atributo** y `yes` es su valor.
-
-La diferencia fundamental:
-
-- `name`: buscamos un contenido (el nombre Puente).
-
-- `other_tags`: buscamos una etiqueta (la clave bridge).
-
-Si quisiéramos buscar cualquier aparición de `bridge` en `other_tags`, también podríamos usar `grepl("bridge", other_tags)`, pero sería menos preciso: podría encontrar coincidencias dentro de otros valores.
-
-Es la diferencia entre buscar una palabra y buscar un campo específico dentro de una estructura de datos.
 
 ```{r}
-calles_osm |>
-  filter(grepl("Puente", name, ignore.case = TRUE)) |>
-  select(osm_id, name, highway, other_tags)
+nodos_degree <- perganet_clean |>
+  activate("nodes") |>
+  st_as_sf() |>
+  mutate(cent_grado = cent_grado)
+
+
+mapview(
+  nodos_degree,
+  zcol = "cent_grado"
+)
 ```
 
-- `grepl("Puente", name)`: busca el texto en cada registro de `name`.
+```{r}
+library(ggplot2)
 
-- `ignore.case = TRUE`: no distingue mayúsculas de minúsculas.
+ggplot(
+  data.frame(cent_grado = cent_grado),
+  aes(x = cent_grado)
+) +
+  geom_histogram(
+    binwidth = 1,
+    boundary = 0.5,
+    color = "black",
+    fill = "steelblue"
+  ) +
+  labs(
+    title = "Distribución de la centralidad de grado",
+    subtitle = "Red vial de Pergamino",
+    x = "Grado del nodo",
+    y = "Cantidad de nodos"
+  ) +
+  scale_x_continuous(breaks = seq(1, 10, 1)) +
+  theme_minimal()
+```
 
-- `filter()`: conserva las coincidencias.
+```{r}
+nodos_criticos <- nodos_degree |>
+  filter(cent_grado %in% c(9, 10))
+mapview(nodos_criticos, zcol = "cent_grado")
+```
 
-- `select()`: muestra las columnas que te interesan.
+Por otro lado, encontramos un nodo con 9 conexiones perteneciente al punto de confluencia de las Rutas 188, junto con la avenida de entrada Juan Domingo Peron. y 10 conexiones en la zona de loteos y quintas, proximas a las avenidas de entrada y las rutas.
+
+#### *Centralidad de Cercanía*
+
+```{r Centralidad de Cercanía}
+cent_cerca <- igraph::closeness(
+  perganet_clean,
+  mode = "all",
+  weights = igraph::E(perganet_clean)$weights,
+  normalized = TRUE
+)
+summary(cent_cerca)
+
+```
+
+```{r}
+dist_mediall <- 1 / cent_cerca
+summary(dist_mediall)
+```
+
+```{r}
+cent_cerca2 <- igraph::closeness(
+  perganet_clean,
+  mode = "in",
+  weights = igraph::E(perganet_clean)$weights,
+  normalized = TRUE
+)
+
+summary(cent_cerca2)
+
+```
+
+```{r}
+dist_mediain <- 1 / cent_cerca2
+summary(dist_mediain)
+```
+
+```{r}
+cent_cerca3 <- igraph::closeness(
+  perganet_clean,
+  mode = "out",
+  weights = igraph::E(perganet_clean)$weights,
+  normalized = TRUE
+)
+summary(cent_cerca3)
+
+```
+
+```{r}
+dist_mediaout <- 1 / cent_cerca3
+summary(dist_mediaout)
+```
+
+```{r}
+resumen_in <- summary(dist_mediain)
+resumen_out <- summary(dist_mediaout)
+
+tabla_closeness <- rbind(
+  IN = resumen_in,
+  OUT = resumen_out
+)
+
+```
+
+```{r}
+tabla_closeness
+
+```
+
+```{r}
+hist(
+  dist_mediain,
+  breaks = 30,
+  main = "Distribución de centralidad de cercanía",
+  xlab = "Centralidad de cercanía",
+  ylab = "Cantidad de nodos",
+  col = "steelblue"
+)
+```
+
+```{r}
+hist(
+  dist_mediaout,
+  breaks = 30,
+  main = "Distribución de centralidad de cercanía",
+  xlab = "Centralidad de cercanía",
+  ylab = "Cantidad de nodos",
+  col = "steelblue"
+)
+```
+
+```{r}
+hist(
+  dist_mediall,
+  breaks = 30,
+  main = "Distribución de centralidad de cercanía",
+  xlab = "Centralidad de cercanía",
+  ylab = "Cantidad de nodos",
+  col = "steelblue"
+)
+```
+
+En términos generales, la red presenta una accesibilidad direccional bastante simétrica: las distancias medias de llegada y salida son muy similares, pero con una gran diferencia en los extremos, puesto que el mínimo de llegadas es apenas de 23,77 m, mientras que el mínimo de `salida`es 2.980 m.
+
+**La mediana** está alrededor **3.950 metros,** tanto en la llegada como la salida, de distancia promedio al resto La red , en promedio, esta **equilibrada en accesibilidad** en ambos sentidos.**El máximo \~8.810 m** coincide casi exactamente en IN y OUT. Probablemente sea el **mismo nodo** (o un par de nodos simétricos) en el borde de la red, mal conectado en ambos sentidos.
+
+#### *Centralidad de Intermediación de Nodos - PRIMAL*
+
+```{r}
+cent_interpri2 <- igraph::betweenness(
+  perganet_clean,
+  directed = TRUE,
+  weights = igraph::E(perganet_clean)$weights
+  )
+summary(cent_interpri2)
+```
+
+```{r}
+cent_interpri <- igraph::betweenness(
+  perganet_clean,
+  directed = TRUE,
+  weights = igraph::E(perganet_clean)$weights,
+  normalized = TRUE
+)
+summary(cent_interpri)
+
+```
+
+Tenemos un maximo de 0.152, es decir que ni siquiera el nodo mas transitado llega a participar como intermediario del 16% de los caminimos minimos . No obstante, con una mediana del 0.64% (**0.006432)** podemos afirmar que el nodo tipico intermedia en menos del 1% de las rutas; no obstante, observamos cierta concetración moderada -es decir que encontramos nodos de distinta relevancia, pero no se producen cuellos de botella- dado que el nodo con mayor centralidad (0.152) intermedia 24 cveces mas que el mediano. Por otro lado, el 75% de los nodos (Q3) intermedia en menos del 1.75% de los caminos más cortos. Solo el 25% restante supera ese umbral.
+
+```{r}
+hist(
+  cent_interpri,
+  breaks = 30,
+  main = "Distribución de centralidad de intermediación",
+  xlab = "Intermediación normalizada",
+  ylab = "Cantidad de nodos",
+  col = "steelblue"
+)
+```
+
+Como podemos observar en el histograma, la distribución es asimétrica con una cola hacia la derecha; es decir una mayoría de nodos con valores cercanos a cero y un subconjunto reducido que concentra buena parte de la intermediación, pero sin un punto crítico que monopolice las rutas.
+
+```{r}
+nodos_interpri <- perganet_clean |>
+  activate("nodes") |>
+  st_as_sf() |>
+  mutate(cent_inter = cent_interpri)
+
+mapview(
+  nodos_interpri,
+  zcol = "cent_inter"
+)
+```
+
+```{r}
+nodos_interpri <- perganet_clean |>
+  activate("nodes") |>
+  st_as_sf() |>
+  mutate(cent_inter = cent_interpri)
+
+mapview(
+  nodos_interpri,
+  zcol = "cent_inter"
+)
+```
+
+#### *Centralidad de intermediación de Aristas*
+
+```{r Normalizada}
+cent_arist <- igraph::edge_betweenness(
+  perganet_clean,
+  directed = TRUE,
+  weights = igraph::E(perganet_clean)$weights
+)
+summary(cent_arist)
+
+```
+
+```{r}
+calles_ebtw <- perganet_clean |>
+  activate("edges") |>
+  mutate(cent_inter = cent_arist) |>
+  st_as_sf()
+
+
+ggplot() +
+  geom_sf(
+    data = calles_ebtw,
+    aes(color = cent_inter),
+    linewidth = 0.5
+  ) +
+  scale_color_viridis_c(
+    option = "inferno",
+    name = "Intermediación"
+  ) +
+  labs(
+    title = "Centralidad de intermediación de aristas",
+    subtitle = "Red vial de Pergamino",
+    x = NULL,
+    y = NULL,
+    caption = "Fuente: elaboración propia con datos de OpenStreetMap"
+  ) +
+  theme_minimal()
+
+# ggsave(
+#    filename = "mapa_centarist2.png", 
+#    width = 8,       # Ancho en pulgadas
+#    height = 6,      # Alto en pulgadas
+#    dpi = 300        # Resolución (300 dpi es estándar de calidad para impresión/papers)
+#  )
+```
+
+```{r}
+hist(
+  cent_arist,
+  breaks = 30,
+  main = "Distribución de intermediación de aristas",
+  xlab = "Intermediación absoluta",
+  ylab = "Cantidad de aristas",
+  col = "steelblue"
+)
+```
+
+Como el grafico evidencia, tenemos una distribuición asimetrica de la intermediación; si bien una proporción importante de las aristas tiene un bajo grado de participación en los caminos mínimos, por otro lado encontramos un pequeño sub-conjunto que concentra valores mucho bastante elevados, reflejados en la cola hacia la derecha del histograma.
+
+Examinemos ahora cuales son las aristas que concentran el mayor grado de intermediación
+
+```{r}
+
+top5_aristas <- calles_ebtw |>
+  arrange(desc(cent_inter)) |>
+  slice_head(n = 20)
+
+top5_aristas |>
+  st_drop_geometry() |>
+  select(osm_id, name, highway, oneway, cent_inter)
+```
+
+Los distintos tramos del tramo urbano de la Ruta 188 (Avenidas Venini Norte, Sur, Dr. Aquileio Buccar), funcionan como ruta integradora y corredor estructurante, seguida por Boulevard Rocha.
+
+```{r}
+calles_ebtw |>
+  filter(grepl("\\bPuente\\b", name, ignore.case = TRUE)) |>
+  arrange(desc(cent_inter)) |>
+  st_drop_geometry() |>
+  select(osm_id, name, highway, oneway, cent_inter)
+```
+
+Agrupamos las distintas aristas de los puentes
+
+```{r}
+puentes_top <- calles_ebtw |>
+  filter(grepl("\\bPuente\\b", name, ignore.case = TRUE)) |>
+  arrange(desc(cent_inter)) |>
+  select(osm_id, name, highway, oneway, cent_inter)
+
+puentes_resumen <- puentes_top |>
+  st_drop_geometry() |>
+  group_by(name) |>
+  summarise(
+    intermediacion_media = mean(cent_inter),
+    intermediacion_max = max(cent_inter),
+    cantidad_aristas = n()
+  ) |>
+  arrange(desc(intermediacion_media))
+
+  
+```
+
+| Puente            | Intermediación media | Aristas |
+|-------------------|----------------------|---------|
+| Bucar             | 1.217.653            | 4       |
+| Rocha             | 954.563,5            | 4       |
+| Merced            | 671.977,5            | 2       |
+| Colón             | 592.738,5            | 2       |
+| Florencio Sánchez | 470.196,5            | 4       |
+| Bicentenario      | 227.927              | 4       |
+
+```{r}
+
+ggplot() +
+  geom_sf(
+    data = calles_ebtw |> select(geometry),
+    color = "grey80",
+    linewidth = 0.3
+  ) +
+  geom_sf(
+    data = top5_aristas,
+    color = "red",
+    linewidth = 1.2
+  ) +
+  labs(
+    title = "Cinco aristas con mayor intermediación",
+    subtitle = "Red vial de Pergamino",
+    caption = "Fuente: elaboración propia con datos de OpenStreetMap"
+  ) +
+  theme_minimal()
+
+```
+
+Vamos a generar la grilla para el tercer nivel
+
+```{r Grilla}
+area_estudio <- st_as_sfc(st_bbox(perganet_clean)) |>
+  st_buffer(500)
+
+grilla_hex_geom <- sf::st_make_grid(
+  area_estudio,
+  cellsize = 500,
+  square = FALSE
+)
+
+
+grilla_hex <- sf::st_sf(
+  zona_id = seq_along(grilla_hex_geom),
+  geometry = grilla_hex_geom
+)
+
+mapview(grilla_hex, map.types = "OpenStreetMap")
+```
+
+```{r Join espacial}
+nodos_grillagrad <- st_join(
+  nodos_degree,
+  grilla_hex,
+  join = st_within
+)
+
+
+```
+
+```{r Verificacion}
+cat("Nodos sin zona asignada:",
+    sum(is.na(nodos_grillagrad$zona_id)), "\n")
+
+cat("Zonas con al menos un nodo:",
+    dplyr::n_distinct(nodos_grillagrad$zona_id, na.rm = TRUE), "\n")
+
+stopifnot(nrow(nodos_grillagrad) == igraph::gorder(perganet_clean))
+```
+
+```{r}
+
+clasificar_rojos <- function(valores, n_clases = 5) {
+  
+  logv <- log10(valores + 1)
+  
+  cortes <- unique(
+    quantile(
+      logv,
+      probs = seq(0, 1, length.out = n_clases + 1),
+      na.rm = TRUE
+    )
+  )
+  
+  k <- length(cortes) - 1
+  
+  list(
+    clase = cut(logv, breaks = cortes, include.lowest = TRUE),
+    
+    paleta = colorRampPalette(
+      c("#FEE5D9", "#FCAE91", "#FB6A4A",
+        "#DE2D26", "#A50F15", "#67000D")
+    )(k),
+    
+    etiquetas = paste0(
+      format(round(10^cortes[-length(cortes)] - 1), big.mark = "."),
+      " – ",
+      format(round(10^cortes[-1] - 1), big.mark = ".")
+    )
+  )
+}
+```
+
+```{r Contraccion}
+red_zonas <- perganet_clean |>
+  activate("nodes") |>
+  mutate(zona_id = nodos_grillagrad$zona_id) #agregamos identificar de grilla por cada nodo
+
+red_contraida <- tidygraph::convert(
+  red_zonas,
+  to_spatial_contracted,
+  zona_id,
+  simplify = TRUE
+)
+```
+
+```{r Inspeccion}
+# CORRECCIÓN: si la contracción devuelve una lista de estados modificados en lugar de un grafo,
+# se toma el primer estado. Luego se verifica que el objeto sea un grafo antes de medirlo.
+
+cat("Clase de red_contraida:", paste(class(red_contraida), collapse = ", "), "\n")
+if (is.list(red_contraida) && !inherits(red_contraida, "tbl_graph")) {
+  red_contraida <- red_contraida[[1]]
+}
+stopifnot(inherits(red_contraida, "tbl_graph"))
+
+cat("Red contraída por zonas — orden:", igraph::gorder(red_contraida),
+    "| tamaño:", igraph::gsize(red_contraida), "\n")
+```
+
+```{r}
+nodos_contraidos_sf <- red_contraida |>
+  activate("nodes") |>
+  st_as_sf()
+
+aristas_contraidas_sf <- red_contraida |>
+  activate("edges") |>
+  st_as_sf()
+
+names(nodos_contraidos_sf)
+names(aristas_contraidas_sf)
+
+st_geometry_type(nodos_contraidos_sf) |> table()
+st_geometry_type(aristas_contraidas_sf) |> table()
+```
+
+```{r}
+mapa_contraccion <-  ggplot() +
+  geom_sf(data = perganet_clean |> activate("edges") |> st_as_sf(), color = "grey90", linewidth = 0.15) +
+  geom_sf(data = aristas_contraidas_sf, color = "darkorange", linewidth = 0.8, alpha = 0.7) +
+  geom_sf(data = nodos_contraidos_sf, color = "darkred", size = 1.5) +
+  labs(title = "Red contraída por zonas (grilla hexagonal ~500 m)",
+       subtitle = "Naranja: conexiones agregadas entre zonas") +
+  theme_minimal()
+
+print(mapa_contraccion)
+ggsave("figura_ejercicio3_contraccion_espacial.png", mapa_contraccion,
+       width = 8, height = 7, dpi = 200)
+
+#Preguntar a Hernan si realmetne son nodos zonales lo que hizo en la contracción
+```
+
+```{r}
+red_contraida <- red_contraida |>
+  activate("nodes") |>
+  mutate(
+    betweenness_contraida = tidygraph::centrality_betweenness()
+    )
+
+# Extraer nodos y aristas
+nodos_contraidos_sf <- red_contraida |>
+  activate("nodes") |>
+  st_as_sf()
+
+aristas_contraidas_sf <- red_contraida |>
+  activate("edges") |>
+  st_as_sf()
+
+```
+
+```{r}
+# Clasificar la intermediación por cuantiles
+esc_contraida <- clasificar_rojos(
+  nodos_contraidos_sf$betweenness_contraida
+)
+
+nodos_contraidos_sf$clase <- esc_contraida$clase
+
+# Construir mapa
+mapa_contraccion <- ggplot() +
+  geom_sf(
+    data = perganet_clean |> activate("edges") |> st_as_sf(),
+    color = "grey90",
+    linewidth = 0.15
+  ) +
+  geom_sf(
+    data = aristas_contraidas_sf,
+    color = "grey60",
+    linewidth = 0.6,
+    alpha = 0.6
+  ) +
+  geom_sf(
+    data = nodos_contraidos_sf,
+    aes(color = clase),
+    size = 2
+  ) +
+  scale_color_manual(
+    values = esc_contraida$paleta,
+    labels = esc_contraida$etiquetas,
+    name = "Intermediación\n(zona contraída, cuantiles)",
+    drop = FALSE
+  ) +
+  labs(
+    title = "Red contraída por zonas (grilla hexagonal ~500 m)",
+    subtitle = "Cada punto es una zona, coloreado por su intermediación"
+  ) +
+  theme_minimal()
+
+print(mapa_contraccion)
+
+ggsave(
+  "figura_ejercicio3_contraccion_espacial.png",
+  mapa_contraccion,
+  width = 8,
+  height = 7,
+  dpi = 200
+)
+```
+
+Observamos una concentración de intermediación elevada en el sector central de Pergamino y en algunos corredores que conectan el núcleo urbano con sectores periféricos, importante en un caso de necesaria evacuación por inundación.
+
+A continuación empezamos a construir la simulacion en la cual quitaremos las aristas de los puentes. En primer lugar rotulamos con un ID
+
+```{r}
+puentes_top <- puentes_top |>
+  mutate(
+    puente_id = case_when(
+      name == "Puente Bucar" ~ 1,
+      name == "Puente Rocha" ~ 2,
+      name == "Puente Merced" ~ 3,
+      name == "Puente Colón" ~ 4,
+      name == "Puente Florencio Sánchez" ~ 5,
+      name == "Puente del Bicentenario" ~ 6
+    )
+  )
+```
+
+Aca comienza el filtrado por ID
+
+Puente Bucar
+
+```{r Filtrado puente Bucar}
+ids_bucar <- puentes_top |>
+  filter(puente_id == 1) |>
+  pull(osm_id) |>
+  unique()
+
+red_sin_bucar <- perganet_clean |>
+  activate("edges") |>
+  filter(!osm_id %in% ids_bucar)
+
+igraph::gsize(perganet_clean)
+igraph::gsize(red_sin_bucar)
+```
+
+```{r}
+eficiencia_sin_bucar <- igraph::global_efficiency(
+  red_sin_bucar,
+  weights = igraph::E(red_sin_bucar)$weight,
+  directed = TRUE
+)
+
+eficiencia_sin_bucar
+```
+
+```{r}
+variacion_bucar <- (
+  (0.0003984361 - eficiencia_sin_bucar) /
+    0.0003984361
+) * 100
+
+variacion_bucar
+```
+
+```{r}
+distancia_base <- igraph::mean_distance(
+  perganet_clean,
+  directed = TRUE,
+  weights = igraph::E(perganet_clean)$weight,
+  unconnected = TRUE
+)
+
+distancia_base
+```
+
+```{r}
+distancia_sin_bucar <- igraph::mean_distance(
+  red_sin_bucar,
+  directed = TRUE,
+  weights = igraph::E(red_sin_bucar)$weight,
+  unconnected = TRUE
+)
+
+distancia_sin_bucar
+```
+
+```{r}
+variacion_distancia_bucar <- (
+  (distancia_sin_bucar - distancia_base) /
+    distancia_base
+) * 100
+
+variacion_distancia_bucar
+```
+
+```{r}
+componentes_bucar <- igraph::components(
+  red_sin_bucar,
+  mode = "weak"
+)
+
+componentes_bucar$no
+```
+
+```{r}
+table(componentes_bucar$csize)
+```
+
+|                            |        |
+|----------------------------|--------|
+| Caída de eficiencia global | 0,73 % |
+| Aumento de distancia media | 1,04 % |
+| Componentes débiles        | 2      |
+| Nodos aislados             | 1      |
+
+La red pierde una conexión y deja un nodo aislado, pero no divide la trama vial en dos sectores urbanos importantes; por otro lado, observamos que aunque Buccar tenuna un grado de intermediacion elevado, su interrupcion individual no genera un deterioro grande en la eficiencia global, del mismo modo la longitud media entre caminos minimos aumenta un poco mas del 1%.
+
+Rocha
+
+```{r}
+ids_rocha <- puentes_top |>
+  filter(puente_id == 2) |>
+  pull(osm_id) |>
+  unique()
+
+red_sin_rocha <- perganet_clean |>
+  activate("edges") |>
+  filter(!osm_id %in% ids_rocha)
+```
+
+```{r}
+igraph::gsize(perganet_clean)
+igraph::gsize(red_sin_rocha)
+```
+
+```{r}
+eficiencia_sin_rocha <- igraph::global_efficiency(
+  red_sin_rocha,
+  weights = igraph::E(red_sin_rocha)$weight,
+  directed = TRUE
+)
+
+eficiencia_sin_rocha
+```
+
+```{r}
+variacion_rocha <- (
+  (0.0003984361 - eficiencia_sin_rocha) /
+    0.0003984361
+) * 100
+
+variacion_rocha
+```
+
+```{r}
+distancia_sin_rocha <- igraph::mean_distance(
+  red_sin_rocha,
+  directed = TRUE,
+  weights = igraph::E(red_sin_rocha)$weight,
+  unconnected = TRUE
+)
+
+distancia_sin_rocha
+```
+
+```{r}
+variacion_distancia_rocha <- (
+  (distancia_sin_rocha - 4165.522) /
+    4165.522
+) * 100
+
+variacion_distancia_rocha
+```
+
+```{r}
+
+componentes_rocha <- igraph::components(
+  red_sin_rocha,
+  mode = "weak"
+)
+
+componentes_rocha$no
+table(componentes_rocha$csize)
+```
+
+\|
+
+|                     |              |              |
+|---------------------|--------------|--------------|
+| Eficiencia global   | 0,0003955269 | 0,0003956575 |
+| Caída de eficiencia | 0,7302 %     | 0,6974 %     |
+
+La interrupción de Bucar produce una caída de eficiencia ligeramente mayor que la de Rocha, aproximadamente **0,033 puntos** . Ambos puentes tienen una intermediación elevada, pero su impacto sobre la eficiencia global es similar.
+
+```{r}
+ids_bucar_rocha <- puentes_top |>
+  filter(puente_id %in% c(1, 2)) |>
+  pull(osm_id) |>
+  unique()
+```
+
+```{r}
+red_sin_bucar_rocha <- perganet_clean |>
+  activate("edges") |>
+  filter(!osm_id %in% ids_bucar_rocha)
+
+igraph::gsize(perganet_clean)
+igraph::gsize(red_sin_bucar_rocha)
+```
+
+```{r}
+eficiencia_sin_ambos <- igraph::global_efficiency(
+  red_sin_bucar_rocha,
+  weights = igraph::E(red_sin_bucar_rocha)$weight,
+  directed = TRUE
+)
+
+eficiencia_sin_ambos
+```
+
+```{r}
+variacion_bucar_rocha <- (
+  (0.0003984361 - eficiencia_sin_ambos) /
+    0.0003984361
+) * 100
+
+variacion_bucar_rocha
+```
+
+La interrupción conjunta reduce la eficiencia global un **1,864 %**. El efecto conjunto es mayor que la suma de las caídas individuales (1,4275 %). Esto sugiere un efecto adicional al interrumpir ambos puentes simultáneamente.
+
+```{r}
+distancia_sin_ambos <- igraph::mean_distance(
+  red_sin_bucar_rocha,
+  directed = TRUE,
+  weights = igraph::E(red_sin_bucar_rocha)$weight,
+  unconnected = TRUE
+)
+
+distancia_sin_ambos
+```
+
+```{r}
+variacion_distancia_ambos <- (
+  (4292.641 - 4165.522) / 4165.522
+) * 100
+
+variacion_distancia_ambos
+```
+
+El escenario conjunto muestra un aumento de distancia superior al de cualquiera de las interrupciones individuales. Además, supera la suma de ambos aumentos individuales (1,9916 %).
+
+```{r}
+
+componentes_ambos <- igraph::components(
+  red_sin_bucar_rocha,
+  mode = "weak"
+)
+
+componentes_ambos$no
+table(componentes_ambos$csize)
+
+```
+
+```{r}
+ids_merced <- puentes_top |>
+  filter(puente_id == 3) |>
+  pull(osm_id) |>
+  unique()
+
+red_sin_merced <- perganet_clean |>
+  activate("edges") |>
+  filter(!osm_id %in% ids_merced)
+igraph::gsize(perganet_clean)
+igraph::gsize(red_sin_merced)
+
+```
+
+```{r}
+eficiencia_sin_merced <- igraph::global_efficiency(
+  red_sin_merced,
+  weights = igraph::E(red_sin_merced)$weight,
+  directed = TRUE
+)
+
+eficiencia_sin_merced
+
+
+
+
+```
+
+```{r}
+variacion_merced <- (
+  (0.0003984361 - eficiencia_sin_merced) /
+    0.0003984361
+) * 100
+
+variacion_merced
+```
+
+```{r}
+distancia_sin_merced <- igraph::mean_distance(
+  red_sin_merced,
+  directed = TRUE,
+  weights = igraph::E(red_sin_merced)$weight,
+  unconnected = TRUE
+)
+
+distancia_sin_merced
+```
+
+```{r}
+variacion_distancia_merced <- (
+  (distancia_sin_merced - 4165.522) /
+    4165.522
+) * 100
+
+variacion_distancia_merced
+```
+
+```{r}
+componentes_merced <- igraph::components(
+  red_sin_merced,
+  mode = "weak"
+)
+
+componentes_merced$no
+table(componentes_merced$csize)
+
+```
+
+```{r}
+ids_tres_puentes <- puentes_top |>
+  filter(puente_id %in% c(1, 2, 3)) |>
+  pull(osm_id) |>
+  unique()
+red_sin_tres <- perganet_clean |>
+  activate("edges") |>
+  filter(!osm_id %in% ids_tres_puentes)
+igraph::gsize(perganet_clean)
+igraph::gsize(red_sin_tres)
+```
+
+```{r}
+eficiencia_sin_tres <- igraph::global_efficiency(
+  red_sin_tres,
+  weights = igraph::E(red_sin_tres)$weight,
+  directed = TRUE
+)
+
+eficiencia_sin_tres
+```
+
+```{r}
+variacion_eficiencia_tres <- (
+  (0.0003984361 -eficiencia_sin_tres) /
+    0.0003984361
+) * 100
+
+variacion_eficiencia_tres
+```
+
+```{r}
+distancia_sin_tres <- igraph::mean_distance(
+  red_sin_tres,
+  directed = TRUE,
+  weights = igraph::E(red_sin_tres)$weight,
+  unconnected = TRUE
+)
+
+distancia_sin_tres
+```
+
+```{r}
+  variacion_distancia_tres <- (
+    (distancia_sin_tres - 4165.522) /
+      4165.522
+  ) * 100
+  
+  variacion_distancia_tres
+```
+
+Las interrupciones dependen también de cómo se combinan las posiciones estructurales de los puentes. Cae la eficiencia en un 2,79 %. y se incrementa la distancia media en un 4,95 %.
+
+|                            |        |        |
+|----------------------------|--------|--------|
+| Sin Bucar                  | 0,7302 | 1,0365 |
+| Sin Rocha                  | 0,6974 | 0,9551 |
+| Sin Merced                 | 0,3196 | 0,4297 |
+| Sin Bucar + Rocha          | 1,8640 | 3,0520 |
+| Sin Bucar + Rocha + Merced | 2,7914 | 4,9935 |

@@ -1,19 +1,19 @@
 
 #Librerias ---------------------------------------------------------------------
-library(tidyverse)
-library(sf)
-library(geos)
-library(dbscan)
-library(leaflet)
-library(igraph)
-library(tidygraph)
-library(sfnetworks)
-library(osmdata)
-library(units)
-library(mapview)
-library(dbscan)
-library(ggpubr)
-options(scipen = 999)
+  library(tidyverse)
+  library(sf)
+  library(geos)
+  library(dbscan)
+  library(leaflet)
+  library(igraph)
+  library(tidygraph)
+  library(sfnetworks)
+  library(osmdata)
+  library(units)
+  library(mapview)
+  library(dbscan)
+  library(ggpubr)
+  options(scipen = 999)
 
 #Consigna A: Obtención de la red desde OSM--------------------------------------
 

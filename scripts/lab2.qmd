@@ -251,7 +251,7 @@ Hay una diferencia entre:
 - **Arista dirigida:** conexión entre dos nodos en un sentido determinado.
 
 | Puente            | osm_id            | Segmentos físicos\* | Aristas dirigidas |
-|-------------------|-------------------|---------------------|-------------------|
+|------------------|------------------|-------------------|------------------|
 | Colón             | 168389605         | 1                   | 2                 |
 | Rocha             | 176522108         | 1                   | 2                 |
 | Merced            | 176522119         | 1                   | 2                 |
@@ -285,4 +285,98 @@ summary(cent_grado)
 nodos_criticos <- nodos_degree |>
   filter(cent_grado %in% c(9, 10))
 mapview(nodos_criticos, zcol = "cent_grado")
+```
+
+```{r}
+nodos_grillagrad |>
+  filter(is.na(zona_id)) |>
+  select(cent_grado)
+```
+
+```{r}
+nodos_sin_zona <- nodos_grillagrad |>
+  filter(is.na(zona_id))
+
+intersecciones <- st_intersects(nodos_sin_zona, grilla_hex)
+
+table(lengths(intersecciones))
+```
+
+```{r}
+# Identificar los nodos sin zona
+idx_sin_zona <- which(is.na(nodos_grillagrad$zona_id))
+
+# Identificar los hexágonos que intersecta cada nodo
+candidatos <- st_intersects(
+  nodos_grillagrad[idx_sin_zona, ],
+  grilla_hex
+)
+
+# Asignar cada nodo al hexágono con menor zona_id
+zonas_asignadas <- vapply(
+  candidatos,
+  function(x) min(grilla_hex$zona_id[x]),
+  integer(1)
+)
+
+# Actualizar únicamente los tres casos
+nodos_grillagrad$zona_id[idx_sin_zona] <- zonas_asignadas
+```
+
+```{r}
+cat("Nodos sin zona asignada:",
+    sum(is.na(nodos_grillagrad$zona_id)), "\n")
+
+cat("Cantidad de filas:", nrow(nodos_grillagrad), "\n")
+
+cat("Cantidad de nodos originales:",
+    igraph::gorder(perganet_clean), "\n")
+```
+
+```{r}
+red_contraida |>
+  activate("nodes") |>
+  st_as_sf() |>
+  st_drop_geometry() |>
+  count(zona_id, sort = TRUE)
+
+red_contraida |>
+  activate("nodes") |>
+  st_as_sf() |>
+  names()
+
+red_contraida |>
+  activate("nodes") |>
+  st_as_sf() |>
+  head()
+```
+
+```{r}
+nrow(puentes_top)
+
+aristas_red <- perganet_clean |>
+  activate("edges") |>
+  st_as_sf() |>
+  st_drop_geometry()
+```
+
+```{r}
+anti_join(
+  puentes_top |> st_drop_geometry(),
+  aristas_red,
+  by = "osm_id"
+)
+```
+
+```{r}
+aristas_red |>
+  inner_join(
+    puentes_top |> st_drop_geometry() |> select(osm_id, puente_id),
+    by = "osm_id"
+  ) |>
+  count(puente_id)
+```
+
+```{r}
+head(puentes_top |> st_drop_geometry())
 ```
