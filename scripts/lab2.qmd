@@ -380,3 +380,10 @@ aristas_red |>
 ```{r}
 head(puentes_top |> st_drop_geometry())
 ```
+
+```{r}
+perga_rc <- read_sf("data/raw/pergamino_radios/Estratificación de radios censales, 2022 - Pergamino.shp")
+
+plot(perga_rc)
+
+```
