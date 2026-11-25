@@ -20,6 +20,8 @@ library(units)
 library(mapview)
 library(dbscan)
 library(ggpubr)
+library(janitor)
+library(spdep)
 options(scipen = 999)
 ```
 
@@ -966,3 +968,253 @@ Las interrupciones dependen también de cómo se combinan las posiciones estruct
 | Sin Merced                 | 0,3196 | 0,4297 |
 | Sin Bucar + Rocha          | 1,8640 | 3,0520 |
 | Sin Bucar + Rocha + Merced | 2,7914 | 4,9935 |
+
+#### *Autocorrelación Espacial*
+
+```{r Preparacion}
+#cargamos mapa radiocensales
+perga_mapa <- read_csv("data/raw/indipergamino.csv")
+
+
+perga_radio <- perga_mapa |>
+  select(
+    codigo_radio = `Código de radio`,
+    NBI = `Hogares con al menos un indicador NBI`, 
+    WKT = `Geometría en WKT`
+  ) |>
+  st_as_sf(wkt = "WKT", crs = 4326) |>
+  st_make_valid() |>
+  st_transform(5347)
+
+
+
+plot(perga_radio)
+
+perga_index <- perga_index |> 
+  clean_names()   # limpia nombres de columnas
+
+perga_radioind <- perga_radio |>
+  left_join(perga_index, by = c("codigo_radio" = "codigo_de_radio_1")
+            ) |>
+  select(
+    codigo_radio, 
+    NBI, 
+    poblacion_total, 
+    total_de_hogares, 
+    segmento_socioeconomico_del_radio, hogares_con_desague_a_hoyo_o_pozo_ciego_sin_camara, hogares_con_deficit_en_la_calidad_de_la_construccion, cantidad_de_habitantes_por_km2, personas_con_secundario_completo, personas_sin_secundario_completo
+         )
+
+sum(is.na(perga_radioind$poblacion_total))
+```
+
+```{r}
+# Nivel de significancia: se rechaza la hipótesis nula si p < alfa.
+alfa <- 0.05
+#Matriz de vecinos por contigüidad "reina": dos departamentos son vecinos si
+# comparten al menos un punto de borde (lado o vértice).
+# Matriz de vecinos por contigüidad reina
+perga_reina <- spdep::poly2nb(
+  perga_radioind,
+  queen = TRUE
+)
+
+# # Matriz de pesos espaciales: estandarización "W" (cada fila suma 1), de modo que
+# el rezago de un departamento es el promedio de sus vecinos.
+# zero.policy = TRUE permite que las unidades sin vecinos (islas) no generen error.
+
+pesos_reina <- spdep::nb2listw(
+  perga_reina,
+  style = "W",
+  zero.policy = TRUE
+)
+
+```
+
+```{r Moran / LISA}
+#Variable de interes
+NBI <- perga_radioind$NBI
+class(perga_radio$NBI)
+
+lisa <- localmoran(
+  NBI,
+  pesos_reina,
+  zero.policy = TRUE
+)
+head(lisa)
+#Ii	Valor observado del Moran local para ese radio.
+#E.Ii	Valor esperado del estadístico bajo la hipótesis nula.
+```
+
+Es el indicador de asociación espacial local. Nos permite evaluar si el valor de NBI de un radio se relaciona con los valores de NBI de sus vecinos.
+
+- Un `Ii` positivo sugiere asociación entre valores similares.
+
+- Un `Ii` negativo sugiere asociación entre valores diferentes.
+
+`Pr(z != E(Ii))`**.**
+
+Es el p-valor del Moran local. Nos permite evaluar si la asociación espacial observada para cada radio es estadísticamente significativa.
+
+- `Var.Ii`: varianza de Ii bajo esa hipótesis.
+
+Permite calcular el estadístico Z, que luego se utiliza para evaluar la significancia estadística del Moran local.
+
+```{r}
+perga_radioind$lisa_Ii <- lisa[, "Ii"]
+perga_radioind$lisa_p <- lisa[, "Pr(z != E(Ii))"]  
+z_var <- as.numeric(scale(NBI))
+
+# - scale(densidad) estandariza los valores de NBI.
+# - as.numeric() convierte el resultado en un vector numérico.
+# ¿Para qué estandarizamos? Para expresar cada radio en relación con la media de todos los radios:
+#   - z_var > 0: NBI por encima de la media.
+# - z_var < 0: NBI por debajo de la media.
+# - z_var = 0: NBI igual a la media.
+# En nuestro caso, densidad se reemplaza por NBI.
+
+z_lag <- as.numeric(scale(
+  spdep::lag.listw(pesos_reina, NBI, zero.policy = TRUE)
+))
+
+head(z_lag)
+
+perga_radioind$cuadrante <- case_when(
+  z_var > 0 & z_lag > 0 ~ "Alto-Alto",
+  z_var < 0 & z_lag < 0 ~ "Bajo-Bajo",
+  z_var > 0 & z_lag < 0 ~ "Alto-Bajo",
+  z_var < 0 & z_lag > 0 ~ "Bajo-Alto",
+  TRUE ~ NA_character_
+)
+
+table(perga_radioind$cuadrante, useNA = "ifany")
+```
+
+Al estandarizar, expresamos cuánto se aleja cada radio de esa media, en unidades de desviación estándar.
+
+```{r}
+perga_radioind$cluster_lisa <- ifelse(
+  perga_radioind$lisa_p < alfa,
+  perga_radioind$cuadrante,
+  "No significativo"
+)
+table(perga_radioind$cluster_lisa)
+```
+
+```{r}
+# Paleta de colores del mapa de clusters: rojo = Alto-Alto, azul = Bajo-Bajo,
+# rosa = Alto-Bajo, celeste = Bajo-Alto, gris = no significativo.
+colores_cluster <- c(
+  "Alto-Alto" = "#d7191c",
+  "Bajo-Bajo" = "#2c7bb6",
+  "Alto-Bajo" = "#f4b6b6",
+  "Bajo-Alto" = "#b9e0f0",
+  "No significativo" = "grey85"
+)
+
+mapa_lisa <- ggplot(perga_radioind) +
+  geom_sf(aes(fill = cluster_lisa), color = NA) +
+  scale_fill_manual(
+    values = colores_cluster,
+    name = "Cluster LISA\n(NBI)"
+  ) +
+  labs(
+    title = "Clusters LISA del NBI sin corregir (p < 0.05)"
+  ) +
+  theme_minimal()
+print(mapa_lisa)
+```
+
+```{r}
+summary(perga_radioind$hogares_con_desague_a_hoyo_o_pozo_ciego_sin_camara)
+```
+
+```{r}
+  summary(perga_radioind$total_de_hogares)
+```
+
+```{r}
+perga_radioind <- perga_radioind |>
+  mutate(
+    prop_desague_deficitario =
+      hogares_con_desague_a_hoyo_o_pozo_ciego_sin_camara /
+      total_de_hogares
+  )
+
+desague <- perga_radioind$prop_desague_deficitario
+class(desague)
+
+
+```
+
+```{r}
+
+lisa_desague <- localmoran(
+  desague,
+  pesos_reina,
+  zero.policy = TRUE
+)
+
+head(lisa_desague)
+```
+
+```{r}
+perga_radioind$lisa_Ii_desague <- lisa_desague[, "Ii"]
+
+perga_radioind$lisa_p_desague <- lisa_desague[, "Pr(z != E(Ii))"]
+
+summary(perga_radioind$lisa_p_desague)
+```
+
+```{r}
+z_desague <- as.numeric(scale(desague))
+summary(z_desague)
+```
+
+```{r}
+z_lag_desague <- as.numeric(scale(
+  spdep::lag.listw(
+    pesos_reina,
+    desague,
+    zero.policy = TRUE
+  )
+))
+
+summary(z_lag_desague)
+```
+
+```{r}
+perga_radioind$cuadrante_desague <- dplyr::case_when(
+  z_desague > 0 & z_lag_desague > 0 ~ "Alto-Alto",
+  z_desague < 0 & z_lag_desague < 0 ~ "Bajo-Bajo",
+  z_desague > 0 & z_lag_desague < 0 ~ "Alto-Bajo",
+  z_desague < 0 & z_lag_desague > 0 ~ "Bajo-Alto",
+  TRUE ~ NA_character_
+)
+
+table(perga_radioind$cuadrante_desague, useNA = "ifany")
+```
+
+```{r}
+perga_radioind$cluster_lisa_desague <- ifelse(
+  perga_radioind$lisa_p_desague < alfa,
+  perga_radioind$cuadrante_desague,
+  "No significativo"
+)
+
+table(perga_radioind$cluster_lisa_desague)
+```
+
+```{r}
+mapa_lisa_desague <- ggplot(perga_radioind) +
+  geom_sf(aes(fill = cluster_lisa_desague), color = NA) +
+  scale_fill_manual(
+    values = colores_cluster,
+    name = "Cluster LISA\n(Déficit de desagüe)"
+  ) +
+  labs(
+    title = "LISA del déficit de desagüe (p < 0.05)"
+  ) +
+  theme_minimal()
+
+mapa_lisa_desague
+```
