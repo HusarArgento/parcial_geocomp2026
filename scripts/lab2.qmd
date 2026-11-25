@@ -251,7 +251,7 @@ Hay una diferencia entre:
 - **Arista dirigida:** conexión entre dos nodos en un sentido determinado.
 
 | Puente            | osm_id            | Segmentos físicos\* | Aristas dirigidas |
-|------------------|------------------|-------------------|------------------|
+|-------------------|-------------------|---------------------|-------------------|
 | Colón             | 168389605         | 1                   | 2                 |
 | Rocha             | 176522108         | 1                   | 2                 |
 | Merced            | 176522119         | 1                   | 2                 |
