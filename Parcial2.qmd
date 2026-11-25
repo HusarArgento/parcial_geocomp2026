@@ -966,3 +966,22 @@ Las interrupciones dependen también de cómo se combinan las posiciones estruct
 | Sin Merced                 | 0,3196 | 0,4297 |
 | Sin Bucar + Rocha          | 1,8640 | 3,0520 |
 | Sin Bucar + Rocha + Merced | 2,7914 | 4,9935 |
+
+#### *Autocorrelación Espacial*
+
+```{r}
+##cargamos mapa radiocensales
+perga_mapa <- read_csv("data/raw/indipergamino.csv")
+
+
+perga_radio <- perga_mapa |>
+  select(
+    codigo_radio = `Código de radio`,
+    WKT = `Geometría en WKT`
+    ) |>
+  st_as_sf(wkt = "WKT", crs = 5347)
+
+plot(perga_radio)
+
+
+```
