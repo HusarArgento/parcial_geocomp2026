@@ -251,7 +251,7 @@ Hay una diferencia entre:
 - **Arista dirigida:** conexión entre dos nodos en un sentido determinado.
 
 | Puente            | osm_id            | Segmentos físicos\* | Aristas dirigidas |
-|-------------------|-------------------|---------------------|-------------------|
+|------------------|------------------|-------------------|------------------|
 | Colón             | 168389605         | 1                   | 2                 |
 | Rocha             | 176522108         | 1                   | 2                 |
 | Merced            | 176522119         | 1                   | 2                 |
@@ -386,4 +386,73 @@ perga_rc <- read_sf("data/raw/pergamino_radios/Estratificación de radios censal
 
 plot(perga_rc)
 
+```
+
+```{r}
+perga_radioind <- perga_radioind |>
+  mutate(
+    densidad_faltante = is.na(cantidad_de_habitantes_por_km2)
+  )
+```
+
+```{r}
+ggplot(perga_radioind) +
+  geom_sf(aes(fill = densidad_faltante), color = NA) +
+  scale_fill_manual(
+    values = c("FALSE" = "grey80", "TRUE" = "red"),
+    labels = c("Con datos", "Sin datos"),
+    name = "Densidad"
+  ) +
+  labs(
+    title = "Distribución espacial de datos faltantes",
+    subtitle = "Densidad poblacional por radio censal"
+  ) +
+  theme_minimal()
+```
+
+Tenemos varios NA en la columna de densidad de poblacion, vamos a poblacion total para ver si se debe a valores bajos o faltantes.
+
+```{r}
+summary(perga_radioind$poblacion_total)
+```
+
+```{r}
+sum(is.na(perga_radioind$poblacion_total))
+```
+
+```{r}
+perga_radioind |>
+  filter(densidad_faltante == TRUE) |>
+  st_drop_geometry() |>
+  select(codigo_radio, poblacion_total)
+```
+
+```{r}
+names(nodos_degree)
+names(nodos_interpri)
+
+st_crs(nodos_degree)
+st_crs(nodos_interpri)
+```
+
+```{r}
+# Estructura de los nodos
+nodos_degree
+
+# Resumen de centralidad de grado
+summary(nodos_degree$cent_grado)
+
+# Frecuencia de valores de grado
+table(nodos_degree$cent_grado)
+
+# Cantidad de nodos
+nrow(nodos_degree)
+```
+
+```{r}
+class(perganet_clean)
+
+perganet_clean
+
+head(nodos_degree)
 ```

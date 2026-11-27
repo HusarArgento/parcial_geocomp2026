@@ -969,7 +969,7 @@ Las interrupciones dependen también de cómo se combinan las posiciones estruct
 | Sin Bucar + Rocha          | 1,8640 | 3,0520 |
 | Sin Bucar + Rocha + Merced | 2,7914 | 4,9935 |
 
-#### *Autocorrelación Espacial*
+#### *Autocorrelación Espacial: LISA*
 
 ```{r Preparacion}
  
@@ -1018,7 +1018,6 @@ sum(is.na(perga_radioind$poblacion_total))
 
 
 ```
-
 
 ```{r}
 # Nivel de significancia: se rechaza la hipótesis nula si p < alfa.
@@ -1185,11 +1184,13 @@ summary(perga_radioind$lisa_p_desague)
 ```
 
 ```{r}
+#Estandarizamos
 z_desague <- as.numeric(scale(desague))
 summary(z_desague)
 ```
 
 ```{r}
+#Rezago
 z_lag_desague <- as.numeric(scale(
   spdep::lag.listw(
     pesos_reina,
@@ -1238,3 +1239,471 @@ mapa_lisa_desague <- ggplot(perga_radioind) +
 mapa_lisa_desague
 
 ```
+
+Ultima variable para la Autocorrelacion espacial: Poblacion total
+
+```{r}
+summary(perga_radioind$poblacion_total)
+```
+
+```{r}
+hist(
+  na.omit(perga_radioind$poblacion_total),
+  breaks = 30,
+  main = "Distribución poblacional por radios",
+  xlab = "Poblacion",
+  ylab = "Cant. Radios"
+)
+```
+
+```{r}
+  pob_tot <- perga_radioind$poblacion_total
+  class(perga_radioind$poblacion_total)
+  
+  lisa_pob <- localmoran(
+    pob_tot,
+    pesos_reina,
+    zero.policy = TRUE
+  )
+  head(lisa_pob)
+```
+
+```{r}
+perga_radioind$lisa_Ii_pob <- lisa_pob[, "Ii"]
+
+perga_radioind$lisa_p_pob <- lisa_pob[, "Pr(z != E(Ii))"]
+
+summary(perga_radioind$lisa_p_pob)
+```
+
+```{r}
+#Estandarizamos
+z_pob <- as.numeric(scale(pob_tot))
+
+#Rezago 
+z_lag_pob <- as.numeric(scale(
+  spdep::lag.listw(
+    pesos_reina,
+    pob_tot,
+    zero.policy = TRUE
+  )
+))
+
+perga_radioind$cuadrante_pob <- case_when(
+  z_pob > 0 & z_lag_pob > 0 ~ "Alto-Alto",
+  z_pob < 0 & z_lag_pob < 0 ~ "Bajo-Bajo",
+  z_pob > 0 & z_lag_pob < 0 ~ "Alto-Bajo",
+  z_pob < 0 & z_lag_pob > 0 ~ "Bajo-Alto",
+  TRUE ~ NA_character_
+)
+
+table(perga_radioind$cuadrante_pob, useNA = "ifany")
+
+```
+
+```{r}
+perga_radioind$cluster_lisa_pob <- ifelse(
+  perga_radioind$lisa_p_pob < alfa,
+  perga_radioind$cuadrante_pob,
+  "No significativo"
+)
+
+table(perga_radioind$cluster_lisa_pob)
+```
+
+```{r}
+mapa_lisa_pob <- ggplot(perga_radioind) +
+  geom_sf(aes(fill = cluster_lisa_pob), color = NA) +
+  scale_fill_manual(
+    values = colores_cluster,
+    name = "Cluster LISA\n(Población total)"
+  ) +
+  labs(
+    title = "Clusters LISA de población total (p < 0.05)"
+  ) +
+  theme_minimal()
+print(mapa_lisa_pob)
+
+```
+
+```{r}
+perga_radioind <- perga_radioind |>
+  mutate(
+    prop_nbi = NBI / total_de_hogares
+  )
+
+summary(perga_radioind$prop_nbi)
+```
+
+```{r}
+# 1. Variable
+nbi_prop <- perga_radioind$prop_nbi
+
+# 2. Moran local
+lisa_nbi_prop <- localmoran(
+  nbi_prop,
+  pesos_reina,
+  zero.policy = TRUE
+)
+
+# 3. Guardar resultados
+perga_radioind$lisa_Ii_nbi_prop <- lisa_nbi_prop[, "Ii"]
+
+perga_radioind$lisa_p_nbi_prop <- lisa_nbi_prop[, "Pr(z != E(Ii))"]
+
+# 4. Estandarizar variable propia
+z_nbi_prop <- as.numeric(scale(nbi_prop))
+
+# 5. Calcular rezago espacial estandarizado
+z_lag_nbi_prop <- as.numeric(scale(
+  spdep::lag.listw(
+    pesos_reina,
+    nbi_prop,
+    zero.policy = TRUE
+  )
+))
+
+# 6. Clasificar cuadrantes LISA
+perga_radioind$cuadrante_nbi_prop <- dplyr::case_when(
+  z_nbi_prop > 0 & z_lag_nbi_prop > 0 ~ "Alto-Alto",
+  z_nbi_prop < 0 & z_lag_nbi_prop < 0 ~ "Bajo-Bajo",
+  z_nbi_prop > 0 & z_lag_nbi_prop < 0 ~ "Alto-Bajo",
+  z_nbi_prop < 0 & z_lag_nbi_prop > 0 ~ "Bajo-Alto",
+  TRUE ~ NA_character_
+)
+
+# 7. Clasificar clusters según significatividad
+perga_radioind$cluster_lisa_nbi_prop <- ifelse(
+  perga_radioind$lisa_p_nbi_prop < alfa,
+  perga_radioind$cuadrante_nbi_prop,
+  "No significativo"
+)
+
+# 8. Resultados
+summary(perga_radioind$lisa_p_nbi_prop)
+
+table(
+  perga_radioind$cuadrante_nbi_prop,
+  useNA = "ifany"
+)
+
+table(
+  perga_radioind$cluster_lisa_nbi_prop
+)
+
+# 9. Mapa
+mapa_lisa_nbi_prop <- ggplot(perga_radioind) +
+  geom_sf(aes(fill = cluster_lisa_nbi_prop), color = NA) +
+  scale_fill_manual(
+    values = colores_cluster,
+    name = "Cluster LISA\n(Proporción NBI)"
+  ) +
+  labs(
+    title = "Clusters LISA de proporción de Hogares con NBI (p < 0.05)"
+  ) +
+  theme_minimal()
+
+mapa_lisa_nbi_prop
+```
+
+#### *Autocorrelación Espacial: Getis Ord GI*
+
+Incorporamos la centralidad de grado y de intermediacion al dataset
+
+```{r}
+  
+vecinos_reina_self <- spdep::include.self(perga_reina)
+
+pesos_gi <- spdep::nb2listw(
+  vecinos_reina_self,
+  style = "B",
+  zero.policy = TRUE
+)  
+
+gi_nbi <- spdep::localG(
+  perga_radioind$prop_nbi,
+  pesos_gi,
+  zero.policy = TRUE
+)
+
+perga_radioind$gi_star_nbi <- as.numeric(gi_nbi)
+
+perga_radioind$cluster_gi_nbi <- dplyr::case_when(
+  perga_radioind$gi_star_nbi >= 1.96 ~ "Hot spot (p<0.05)",
+  perga_radioind$gi_star_nbi <= -1.96 ~ "Cold spot (p<0.05)",
+  TRUE ~ "No significativo"
+)
+
+
+table(perga_radioind$cluster_gi_nbi)
+```
+
+```{r}
+colores_gi <- c(
+  "Hot spot (p<0.05)" = "#d7191c",
+  "Cold spot (p<0.05)" = "#2c7bb6",
+  "No significativo" = "grey85"
+)
+
+mapa_gi_nbi <- ggplot(perga_radioind) +
+  geom_sf(aes(fill = cluster_gi_nbi), color = NA) +
+  scale_fill_manual(
+    values = colores_gi,
+    name = "Getis-Ord Gi*\n(Proporción NBI)"
+  ) +
+  labs(
+    title = "Hot spots y cold spots de proporción de NBI",
+    subtitle = "Pergamino — Censo 2022"
+  ) +
+  theme_minimal()
+
+print(mapa_gi_nbi)
+```
+
+El mapa presenta una distribución espacial heterogéneaEl cold spot se encuentra en el sector norte / noroeste del mapa, se observa un núcleo localizado de valores bajos de privación; por otro lado, en el sector centro/ centro- sur y las margenes este y oeste se presentan los hot spots. Cabe destacar que en el caso del hot spto centro guarda una correspondencia espacial con sectores que concentran mayor población, los vacíos podrían dar lugar a pensar en una transición o una mezcla de niveles socioeconómicos, pero su verificación amerita contraste con otras variables censales.
+
+#### *Autocorrelacion Espacial Global: Moran Global*
+
+Variable de Interes: Propocion de hogares con NBI por radio censal
+
+```{r preparacion: vecindad y pesos}
+perga_reina <- poly2nb(
+  perga_radioind,
+  queen = TRUE
+)
+
+pesos_reina <- nb2listw(
+  perga_reina,
+  style = "W",
+  zero.policy = TRUE
+)
+
+I_MORAN_nbi <- moran(
+  perga_radioind$prop_nbi * 100,
+  listw = pesos_reina,
+  n = length(perga_reina),
+  zero.policy = TRUE,
+  S0 = Szero(pesos_reina)
+)
+
+I_MORAN_nbi
+
+```
+
+*Tests*
+
+```{r bajo randomizacion}
+moran.test(
+  perga_radioind$prop_nbi,
+  listw = pesos_reina,
+  zero.policy = TRUE,
+  randomisation = TRUE
+)
+```
+
+```{r bajo normalidad}
+moran.test(
+  perga_radioind$prop_nbi,
+  listw = pesos_reina,
+  zero.policy = TRUE,
+  randomisation = FALSE
+)
+```
+
+```{rbajo Monte Carlo}
+moran.mc(
+  perga_radioind$prop_nbi,
+  listw = pesos_reina,
+  nsim = 9999,
+  zero.policy = TRUE
+)
+```
+
+```{r}
+spdep::moran.plot(
+  perga_radioind$prop_nbi,
+  pesos_reina,
+  zero.policy = TRUE,
+  labels = FALSE,
+  xlab = "Proporción de hogares con NBI",
+  ylab = "Rezago espacial de la proporción de NBI",
+  main = "Diagrama de dispersión de Moran - NBI"
+)
+```
+
+Variable de interes: Desague deficitario
+
+```{r}
+I_MORAN_desague <- moran(
+  perga_radioind$prop_desague_deficitario * 100,
+  listw = pesos_reina,
+  n = length(perga_reina),
+  zero.policy = TRUE,
+  S0 = Szero(pesos_reina)
+)
+
+I_MORAN_desague
+```
+
+```{r}
+moran.test(
+  perga_radioind$prop_desague_deficitario,
+  listw = pesos_reina,
+  zero.policy = TRUE,
+  randomisation = TRUE
+)
+```
+
+```{r}
+moran.test(
+  perga_radioind$prop_desague_deficitario,
+  listw = pesos_reina,
+  zero.policy = TRUE,
+  randomisation = FALSE
+)
+```
+
+```{r}
+moran.mc(
+  perga_radioind$prop_desague_deficitario,
+  listw = pesos_reina,
+  nsim = 9999,
+  zero.policy = TRUE
+)
+```
+
+```{r}
+spdep::moran.plot(
+  perga_radioind$prop_desague_deficitario,
+  pesos_reina,
+  zero.policy = TRUE,
+  labels = FALSE,
+  xlab = "Proporción de hogares con NBI",
+  ylab = "Rezago espacial de la proporción de NBI",
+  main = "Diagrama de dispersión de Moran - NBI"
+)
+```
+
+La evidencia es muy fuerte para rechazar la hipótesis nula de ausencia de autocorrelación espacial.
+
+Los radios con proporciones elevadas de hogares con déficit de desagüe tienden a estar próximos a otros radios con proporciones elevadas. Lo mismo ocurre con los valores bajos.
+
+Además, hay un resultado interesante para la comparación:
+
+- `prop_nbi`: Moran I = 0,1817; K = 11,89975.
+
+- `prop_desague_deficitario`: Moran I = 0,7018; K = 2,98877.
+
+El déficit de desagüe presenta un patrón de agrupamiento espacial mucho más intenso, aunque su distribución estadística sea muy distinta de la proporción de NBI.
+
+Geary
+
+```{r}
+C_GEARY_nbi <- geary(
+  perga_radioind$prop_nbi * 100,
+  listw = pesos_reina,
+  n = length(perga_reina),
+  n1 = length(perga_reina) - 1,
+  zero.policy = TRUE,
+  S0 = Szero(pesos_reina)
+)
+
+C_GEARY_nbi
+```
+
+Tests
+
+```{r Randomizado}
+geary.test(
+  perga_radioind$prop_nbi,
+  listw = pesos_reina,
+  zero.policy = TRUE,
+  randomisation = TRUE,
+  alternative = "two.sided"
+)
+```
+
+```{r}
+geary.mc(
+  perga_radioind$prop_nbi,
+  listw = pesos_reina,
+  nsim = 999,
+  zero.policy = TRUE
+)
+```
+
+El resultado confirma autocorrelación espacial positiva y estadísticamente significativa para la proporción de hogares con NBI.
+
+- **Geary C:** 0,83393.
+
+- **Permutaciones:** 999.
+
+- **Rango observado:** 7.
+
+- **p-value:** 0,007.
+
+El rango 7 indica que el valor observado quedó entre los valores más bajos de la distribución de permutaciones. El p-value permite rechazar la hipótesis nula al 5%.
+
+### **Comparación final: Geary Monte Carlo**
+
+| Variable | Geary C | p-value | Interpretación |
+|----|----|----|----|
+| Proporción NBI | 0,83393 | 0,007 | Autocorrelación positiva significativa |
+| Proporción desagüe deficitario | 0,33733 | 0,001 | Autocorrelación positiva muy marcada |
+
+**Conclusión:** ambas variables presentan agrupamiento espacial significativo, pero el déficit de desagüe muestra una autocorrelación considerablemente más intensa.
+
+Esto coincide con los resultados de Moran global. No estamos midiendo cuánto mayor es la privación, sino cuán agrupados espacialmente están los valores similares.
+
+Con esto quedan cerradas las pruebas globales de Moran y Geary para las dos variables socioeconómicas.
+
+```{r}
+C_GEARY_desague <- geary(
+  perga_radioind$prop_desague_deficitario * 100,
+  listw = pesos_reina,
+  n = length(perga_reina),
+  n1 = length(perga_reina) - 1,
+  zero.policy = TRUE,
+  S0 = Szero(pesos_reina)
+)
+
+C_GEARY_desague
+```
+
+```{r}
+geary.test(
+  perga_radioind$prop_desague_deficitario,
+  listw = pesos_reina,
+  zero.policy = TRUE,
+  randomisation = TRUE
+)
+```
+
+1.  **Geary C = 0,3373:** está muy por debajo de 1. Indica una autocorrelación espacial positiva marcada. Los radios con proporciones elevadas de hogares con desagüe deficitario tienden a estar próximos a otros radios con valores elevados; lo mismo sucede con los valores bajos.
+
+2.  **Z = 13,494 y p-value prácticamente cero:** permiten rechazar la hipótesis nula de ausencia de autocorrelación espacial.
+
+3.  **K = 2,9888:** es prácticamente 3, valor de referencia de una distribución normal. Describe la curtosis de la variable, no la intensidad de la autocorrelación.
+
+```{r}
+geary.mc(
+  perga_radioind$prop_desague_deficitario,
+  listw = pesos_reina,
+  nsim = 999,
+  zero.policy = TRUE
+)
+```
+
+El rango observado igual a 1 indica que el Geary C observado fue el menor de los 1000 valores considerados. Es decir, se ubicó en el extremo inferior de la distribución de permutaciones, lo que respalda una autocorrelación espacial positiva.
+
+**Ya tenemos consistencia entre los tres procedimientos para desagüe:**
+
+| Prueba | Resultado | Conclusión |
+|----|----|----|
+| Geary C | 0,3373 | Autocorrelación positiva marcada |
+| Geary test analítico | Z = 13,494; p \< 2,2 × 10⁻¹⁶ | Significativo |
+| Geary Monte Carlo | p = 0,001 | Significativo |
+
+Una precisión: con 999 permutaciones, `p = 0,001` es el mínimo valor que puede reportar esta prueba. No significa que el valor p real sea exactamente 0,001.
+
+Con esto cerramos Geary para desagüe. Tenemos evidencia muy fuerte de que el déficit de desagüe no se distribuye aleatoriamente, sino que presenta agrupamientos territoriales.
