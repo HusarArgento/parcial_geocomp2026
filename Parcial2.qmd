@@ -2,6 +2,8 @@
 title: "Parcial2Informe"
 format: html
 editor: visual
+editor_options: 
+  chunk_output_type: inline
 ---
 
 #### *Librerias*
@@ -23,11 +25,13 @@ library(ggpubr)
 library(janitor)
 library(spdep)
 options(scipen = 999)
+
 ```
 
 #### *Centralidad de Grado*
 
 ```{r Centralidad de Grado}
+#| echo: true
 cent_grado <- igraph::degree(
   perganet_clean,
   mode = "all"
@@ -49,14 +53,15 @@ nodos_degree <- perganet_clean |>
   mutate(cent_grado = cent_grado)
 
 
-mapview(
+mapa_grado <- mapview(
   nodos_degree,
   zcol = "cent_grado"
 )
+print(mapa_grado)
 ```
 
 ```{r}
-library(ggplot2)
+
 
 ggplot(
   data.frame(cent_grado = cent_grado),
@@ -111,9 +116,7 @@ cent_cerca2 <- igraph::closeness(
   weights = igraph::E(perganet_clean)$weights,
   normalized = TRUE
 )
-
 summary(cent_cerca2)
-
 ```
 
 ```{r}
@@ -188,7 +191,7 @@ hist(
 
 En términos generales, la red presenta una accesibilidad direccional bastante simétrica: las distancias medias de llegada y salida son muy similares, pero con una gran diferencia en los extremos, puesto que el mínimo de llegadas es apenas de 23,77 m, mientras que el mínimo de `salida`es 2.980 m.
 
-**La mediana** está alrededor **3.950 metros,** tanto en la llegada como la salida, de distancia promedio al resto La red , en promedio, esta **equilibrada en accesibilidad** en ambos sentidos.**El máximo \~8.810 m** coincide casi exactamente en IN y OUT. Probablemente sea el **mismo nodo** (o un par de nodos simétricos) en el borde de la red, mal conectado en ambos sentidos.
+La mediana está alrededor 3.950 metros, tanto en la llegada como la salida, de distancia promedio al resto La red , en promedio, esta equilibrada en accesibilidad en ambos sentidos.El máximo es de 8.810m, coincide casi exactamente en IN y OUT. Probablemente sea el mismo nodo (o un par de nodos simétricos) en el borde de la red, mal conectado en ambos sentidos.
 
 #### *Centralidad de Intermediación de Nodos - PRIMAL*
 
@@ -212,7 +215,7 @@ summary(cent_interpri)
 
 ```
 
-Tenemos un maximo de 0.152, es decir que ni siquiera el nodo mas transitado llega a participar como intermediario del 16% de los caminimos minimos . No obstante, con una mediana del 0.64% (**0.006432)** podemos afirmar que el nodo tipico intermedia en menos del 1% de las rutas; no obstante, observamos cierta concetración moderada -es decir que encontramos nodos de distinta relevancia, pero no se producen cuellos de botella- dado que el nodo con mayor centralidad (0.152) intermedia 24 cveces mas que el mediano. Por otro lado, el 75% de los nodos (Q3) intermedia en menos del 1.75% de los caminos más cortos. Solo el 25% restante supera ese umbral.
+Tenemos un maximo de casi 0.152, es decir que ni siquiera el nodo mas transitado llega a participar como intermediario del 16% de los caminimos minimos . No obstante, con una mediana del 0.64% (0.006432) podemos afirmar que el nodo tipico intermedia en menos del 1% de las rutas; no obstante, observamos cierta concetración moderada -es decir que encontramos nodos de distinta relevancia, pero no se producen cuellos de botella- dado que el nodo con mayor centralidad (0.152) intermedia 24 cveces mas que el mediano. Por otro lado, el 75% de los nodos (Q3) intermedia en menos del 1.75% de los caminos más cortos. Solo el 25% restante supera ese umbral.
 
 ```{r}
 hist(
@@ -981,7 +984,6 @@ perga_mapa <- read_csv("data/raw/indipergamino.csv")
 perga_radio <- perga_mapa |>
   select(
     codigo_radio = `Código de radio`,
-    NBI = `Hogares con al menos un indicador NBI`, 
     WKT = `Geometría en WKT`
     ) |> 
   st_as_sf(wkt = "WKT", crs = 4326) |>
@@ -991,6 +993,7 @@ perga_radio <- perga_mapa |>
   
 
 plot(perga_radio)
+perga_index <- read_csv("data/raw/perga_index.csv")
 perga_index <- perga_index |> 
   clean_names()   # limpia nombres de columnas
 
@@ -1018,7 +1021,6 @@ sum(is.na(perga_radioind$poblacion_total))
 
 
 ```
-
 
 ```{r}
 # Nivel de significancia: se rechaza la hipótesis nula si p < alfa.
